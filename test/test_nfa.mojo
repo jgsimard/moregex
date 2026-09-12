@@ -1,0 +1,125 @@
+"""Correctness checks for generic Thompson-NFA execution."""
+
+from std.testing import TestSuite, assert_equal, assert_true
+
+from moregex import Regex, search
+from moregex._regex_nfa import _nfa_find_from, _nfa_full_match, _nfa_search
+
+
+def assert_nfa_search[regex: Regex](text: String, expected: Bool) raises:
+    var span = text[byte = 0 : text.byte_length()]
+    assert_equal(_nfa_search[regex](span), expected)
+
+
+def assert_public_search[regex: Regex](text: String, expected: Bool) raises:
+    assert_equal(search[regex](text), expected)
+
+
+def assert_nfa_full[regex: Regex](text: String, expected: Bool) raises:
+    var span = text[byte = 0 : text.byte_length()]
+    assert_equal(_nfa_full_match[regex](span), expected)
+
+
+def assert_nfa_find[
+    regex: Regex
+](text: String, start: Int, consumed: Int) raises:
+    var span = text[byte = 0 : text.byte_length()]
+    var result = _nfa_find_from[regex](span, 0)
+    assert_true(result)
+    assert_equal(result.unsafe_value().start, start)
+    assert_equal(result.unsafe_value().consumed, consumed)
+
+
+def test_basic_nfa_search() raises:
+    comptime literal = Regex("cat")
+    assert_nfa_search[literal]("a cat naps", True)
+    assert_nfa_search[literal]("dogs", False)
+
+    comptime alternation = Regex("cat|dog")
+    assert_nfa_search[alternation]("a dog runs", True)
+    assert_nfa_search[alternation]("fox", False)
+
+    comptime repeated_alternation = Regex("(?:ab|cd)+!")
+    assert_nfa_search[repeated_alternation]("xxabcdab!yy", True)
+    assert_nfa_search[repeated_alternation]("xxabcdab?yy", False)
+
+    comptime classes = Regex("[a-z]+:[0-9]+")
+    assert_nfa_search[classes]("__abc:123__", True)
+    assert_nfa_search[classes]("__abc:xyz__", False)
+
+    comptime negated = Regex("[^0-9]+!")
+    assert_nfa_search[negated]("123abc!456", True)
+    assert_nfa_search[negated]("123456", False)
+
+
+def test_nfa_flags_and_boundaries() raises:
+    comptime multiline = Regex("(?m)^cat$")
+    assert_nfa_search[multiline]("dog\ncat\nfox", True)
+    assert_nfa_search[multiline]("dog\nscatter\nfox", False)
+
+    comptime boundary = Regex("\\bcat\\b")
+    assert_nfa_search[boundary]("a cat!", True)
+    assert_nfa_search[boundary]("scatter", False)
+
+    comptime lazy_suffix = Regex("a+?b")
+    assert_nfa_search[lazy_suffix]("xxaaabyy", True)
+    assert_nfa_search[lazy_suffix]("xxaaayyb", False)
+
+    comptime bounded = Regex("a{2,4}b")
+    assert_nfa_search[bounded]("xaaabx", True)
+    assert_nfa_search[bounded]("xax", False)
+
+    comptime folded = Regex("(?i)[a-f]+:cat")
+    assert_nfa_search[folded]("__AbCd:CAT__", True)
+    assert_nfa_search[folded]("__xyz:cat__", False)
+
+
+def test_ordered_nfa_execution() raises:
+    # The ordered executor must reconsider an earlier alternative when its
+    # continuation fails, while retaining branch and quantifier priority.
+    comptime reconsider = Regex("(a|aa)c")
+    assert_nfa_full[reconsider]("aac", True)
+    assert_nfa_find[reconsider]("ac", 0, 2)
+    assert_nfa_full[reconsider]("ac", True)
+    assert_nfa_find[reconsider]("zzaac!", 2, 3)
+    comptime root_reconsider = Regex("(a|ab)+")
+    assert_nfa_full[root_reconsider]("ab", True)
+    comptime empty_first = Regex("(|x)")
+    assert_nfa_full[empty_first]("", True)
+    assert_nfa_full[empty_first]("x", True)
+
+    comptime nested_giveback = Regex("(a+)*ab")
+    assert_nfa_full[nested_giveback]("aaab", True)
+    assert_nfa_full[nested_giveback]("aaa", False)
+    comptime greedy = Regex("a*")
+    assert_nfa_find[greedy]("aaab", 0, 3)
+    comptime lazy = Regex("a+?")
+    assert_nfa_find[lazy]("aaab", 0, 1)
+    comptime ordered_short = Regex("a|aa")
+    assert_nfa_find[ordered_short]("aa", 0, 1)
+    comptime ordered_long = Regex("aa|a")
+    assert_nfa_find[ordered_long]("aa", 0, 2)
+
+
+def test_unicode_nfa_execution() raises:
+    # Unicode dot lowers to disjoint 1-4-byte Thompson branches and therefore
+    # participates in the same ordered continuation semantics.
+    comptime unicode_suffix = Regex(".+x", unicode=True)
+    assert_nfa_full[unicode_suffix]("💩x", True)
+    assert_nfa_find[unicode_suffix]("zz💩x", 0, 7)
+    comptime nested_unicode = Regex("(.+)*x", unicode=True)
+    assert_nfa_full[nested_unicode]("💩x", True)
+
+
+def test_public_hybrid_nfa_search() raises:
+    # These shapes select the hybrid NFA path in the public generic search.
+    comptime broad_suffix = Regex(".+[A-Z]")
+    assert_public_search[broad_suffix]("a" * 256, False)
+    assert_public_search[broad_suffix]("a" * 255 + "Z", True)
+    comptime repeated_suffix = Regex("(?:ab|cd)+!")
+    assert_public_search[repeated_suffix]("ab" * 128, False)
+    assert_public_search[repeated_suffix]("xx" + "ab" * 8 + "!", True)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
