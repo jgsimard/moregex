@@ -1,0 +1,30 @@
+[workspace]
+authors = ["jgsimard <jeangab23@gmail.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "moregex"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+test = "bash scripts/run_tests.sh"
+fmt = "mojo format moregex test bench"
+fmt-check = "bash scripts/check_format.sh"
+check = { depends-on = ["fmt-check", "test"] }
+bench-build = "mkdir -p build && mojo build -Werror -O3 -I . bench/bench_match.mojo -o build/bench_match"
+bench = { cmd = "./build/bench_match", depends-on = ["bench-build"] }
+bench-fallback-build = "mkdir -p build && mojo build -Werror -O3 -I . bench/bench_fallback.mojo -o build/bench_fallback"
+bench-fallback = { cmd = "./build/bench_fallback", depends-on = ["bench-fallback-build"] }
+bench-kernels-build = "mkdir -p build && mojo build -Werror -O3 -I . bench/bench_kernel_comparison.mojo -o build/bench_kernel_comparison"
+bench-kernels = { cmd = "./build/bench_kernel_comparison", depends-on = ["bench-kernels-build"] }
+bench-kernels-report = { cmd = "python bench/render_kernel_comparison.py", depends-on = ["bench-kernels-build"] }
+bench-compile = "bash scripts/bench_compile_time.sh"
+bench-cross = "bash scripts/run_cross_benchmarks.sh"
+bench-throughput = "bash scripts/run_throughput_benchmarks.sh"
+bench-rebar-test = "REBAR_VERIFY_ONLY=1 bash scripts/run_rebar_benchmarks.sh"
+bench-rebar = "bash scripts/run_rebar_benchmarks.sh"
+bench-rebar-fallback-test = "REBAR_VERIFY_ONLY=1 bash scripts/run_rebar_fallback_benchmarks.sh"
+bench-rebar-fallback = "bash scripts/run_rebar_fallback_benchmarks.sh"
+
+[dependencies]
+mojo = ">=1.2.0.dev2026091205,<2"
+vectorscan = ">=5.4.13,<6"

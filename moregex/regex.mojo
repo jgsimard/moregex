@@ -1,0 +1,724 @@
+"""Public compile-time-specialized regex API."""
+
+from ._ast import (
+    CHAR_UNICODE_DOT,
+    BracketClassNode,
+    CharClassNode,
+    LiteralNode,
+    OrNode,
+    RepeatNode,
+    SequenceNode,
+)
+from ._syntax import Regex
+from std.bit import count_trailing_zeros
+from std.memory import pack_bits
+
+from ._regex_common import (
+    CLASS_TAIL_SIMD_WIDTH,
+    _consume_simd_width_ladder,
+    _match_checksum,
+    _search_simd_width_ladder,
+    _static_source_is_root_literal,
+)
+
+from ._regex_analysis import (
+    _all_casefold_prefixed_sequence_options,
+    _all_literal_options,
+    _all_prefixed_sequence_options,
+    _count_unicode_dot,
+    _end_anchored_fixed_width,
+    _fixed_node_width,
+    _has_generic_backtracking_risk,
+    _is_adjacent_dot_stars_around_literal,
+    _is_bounded_capitalized_word_sequence,
+    _is_bounded_prefix_literal_alternation,
+    _is_class_literal_alternation_with_suffix,
+    _is_greedy_dot_complement_alternation,
+    _is_leading_class_literal_search,
+    _is_multiline_literal_edge_alternation,
+    _is_multiline_whole_line,
+    _is_nested_run_then_disjoint_class,
+    _is_one_byte_class_node,
+    _is_repeated_lazy_dot_delimiter_suffix,
+    _is_reverse_suffix_class_sequence,
+    _is_start_anchored,
+    _is_symmetric_bounded_delimited_sequence,
+    _is_unicode_dotall_plus,
+    _is_whole_input_dotall_star,
+    _leading_repeat_literal_item,
+    _literal_bytes_all_accepted_by_node,
+    _minimum_node_width,
+    _node_start_accepts,
+    _node_start_mask,
+    _prefixed_nested_dot_literal_index,
+    _required_literal_index,
+    _required_one_byte_node_index,
+    _simple_infix_literal_item_for_root,
+    _simple_class_anchor_item_for_root,
+    _start_filter_is_selective,
+    _two_delimiter_bracket_runs_plan,
+    _unicode_dot_kind,
+)
+
+from ._regex_matcher import (
+    _match_node,
+    matches,
+)
+from ._regex_nfa import (
+    _nfa_find_from,
+    _nfa_search_from,
+)
+from ._regex_semantics import (
+    _nfa_node_supported,
+    _nfa_partial_semantics_required,
+)
+from ._regex_runtime import matches_runtime
+
+from ._regex_count import (
+    _count_adjacent_dot_stars_around_literal,
+    _count_bounded_capitalized_word_sequence,
+    _count_bounded_prefix_literal_alternation,
+    _count_bracket_prefixed_sequence,
+    _count_class_literal_alternation_with_suffix,
+    _count_end_anchored_fixed,
+    _count_fixed_width_prefiltered,
+    _count_greedy_dot_complement_alternation,
+    _count_greedy_run_literal_suffix,
+    _contains_one_byte_node,
+    _count_leading_class_literal,
+    _count_multiline_literal_edge_alternation,
+    _count_nested_run_then_disjoint_class,
+    _count_one_byte_atom,
+    _count_one_byte_class_repeat,
+    _count_prefixed_alternation,
+    _count_prefixed_nested_dot_literal,
+    _count_repeated_lazy_dot_delimiter_suffix,
+    _count_reverse_suffix_class,
+    _count_simple_class_anchor,
+    _count_simple_infix,
+    _count_two_delimiter_bracket_runs,
+    _search_one_byte_class_repeat,
+    _search_fixed_width_prefiltered,
+    _search_simple_infix,
+    _search_simple_class_anchor,
+)
+from ._regex_count_casefold import _count_casefold_prefixed_alternation
+from ._regex_count_literal import (
+    _count_edge_prefiltered_literal,
+    _count_reverse_unbordered_literal,
+    _count_short_literal_simd_candidates,
+    _count_static_literal,
+    _count_unique_anchor_literal,
+    _literal_has_unique_first_byte,
+    _literal_unique_high_byte_offset,
+)
+from ._regex_search import (
+    _all_infix_options,
+    _count_long_word,
+    _count_mariomka_ipv4,
+    _count_word_boundary_wrapped,
+    _count_word_run_literal_suffix,
+    _is_bracket_infix_search,
+    _is_long_word_search,
+    _is_mariomka_ipv4,
+    _is_numeric_date_search,
+    _is_prefixed_infix_search,
+    _is_word_boundary_wrapped,
+    _is_word_run_literal_suffix,
+    _search_bracket_infix,
+    _search_infix_alternation,
+    _search_long_word,
+    _search_numeric_date,
+    _search_prefixed_infix,
+    _search_word_boundary_wrapped,
+)
+from ._regex_literals import (
+    _count_literal_alternation,
+    _search_literal_alternation,
+)
+
+
+@always_inline
+def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[LiteralNode]():
+        return text.find(root[LiteralNode].value) >= 0
+    comptime minimum_width = _minimum_node_width[regex.nodes, regex.root]()
+    comptime selective_start = (
+        minimum_width > 0
+        and _start_filter_is_selective[regex.nodes, regex.root]()
+    )
+    if minimum_width > text.byte_length():
+        return False
+    comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
+        return _nfa_search_from[regex](text, 0)
+    comptime if _is_start_anchored[regex.nodes, regex.root]():
+        return Bool(_match_node[regex.nodes, regex.root](text, 0))
+    comptime if _is_multiline_whole_line[regex.nodes, regex.root]():
+        return True
+    comptime if root.isa[RepeatNode]():
+        comptime repeat = root[RepeatNode]
+        comptime if repeat.minimum > 0 and _is_one_byte_class_node[
+            regex.nodes, repeat.child
+        ]():
+            return _search_one_byte_class_repeat[regex](text)
+    # Boundary assertions around a required word run do not change Boolean
+    # existence: every maximal ASCII-word run supplies both boundaries.
+    comptime if _is_long_word_search[regex.nodes, root]():
+        return _search_long_word[regex.nodes, root](text)
+    comptime if root.isa[OrNode]():
+        comptime alternation = root[OrNode]
+        comptime if _is_greedy_dot_complement_alternation[
+            regex.nodes, regex.root
+        ]():
+            return (
+                _count_greedy_dot_complement_alternation[regex, False](text) > 0
+            )
+        comptime if _is_multiline_literal_edge_alternation[
+            regex.nodes, regex.root
+        ]():
+            return (
+                _count_multiline_literal_edge_alternation[regex, False](text)
+                > 0
+            )
+        comptime if _all_literal_options[regex.nodes, alternation]():
+            return _search_literal_alternation[regex.nodes, alternation](text)
+        comptime if _all_infix_options[regex.nodes, alternation]():
+            return _search_infix_alternation[regex.nodes, alternation](text)
+        comptime if _all_casefold_prefixed_sequence_options[
+            regex.nodes, alternation
+        ]():
+            return (
+                _count_casefold_prefixed_alternation[regex, alternation, False](
+                    text
+                )
+                > 0
+            )
+        comptime if _all_prefixed_sequence_options[regex.nodes, alternation]():
+            return (
+                _count_prefixed_alternation[regex, alternation, False](text) > 0
+            )
+    comptime if _is_numeric_date_search[regex.nodes, root]():
+        return _search_numeric_date[regex.nodes, root](text)
+    comptime if _is_bracket_infix_search[regex.nodes, root]():
+        return _search_bracket_infix[regex.nodes, root](text)
+    comptime required_literal = _required_literal_index[
+        regex.nodes, regex.root
+    ]()
+    comptime if required_literal < 0 and _is_word_boundary_wrapped[
+        regex.nodes, root
+    ]():
+        return _search_word_boundary_wrapped[regex](text)
+    comptime fixed_width = _fixed_node_width[regex.nodes, regex.root]()
+    comptime if fixed_width > 0:
+        return _search_fixed_width_prefiltered[regex, fixed_width](text)
+    comptime simple_infix_item = _simple_infix_literal_item_for_root[
+        regex.nodes, regex.root
+    ]()
+    comptime if simple_infix_item >= 0:
+        return _search_simple_infix[regex, simple_infix_item](text)
+    comptime simple_class_item = _simple_class_anchor_item_for_root[
+        regex.nodes, regex.root
+    ]()
+    comptime if simple_class_item >= 0:
+        return _search_simple_class_anchor[regex, simple_class_item](text)
+    # Anchor-driven plans perform their own required-atom scan.  Keep the
+    # standalone rejection after them so positive inputs are not scanned twice.
+    comptime if required_literal >= 0:
+        comptime literal = regex.nodes[required_literal][LiteralNode]
+        comptime if not selective_start or literal.value.byte_length() == 1:
+            if text.find(literal.value) < 0:
+                return False
+    comptime backtracking_risk = _has_generic_backtracking_risk[
+        regex.nodes, regex.root
+    ]()
+    comptime required_byte_node = _required_one_byte_node_index[
+        regex.nodes, regex.root
+    ]()
+    comptime if (
+        required_literal < 0 and backtracking_risk and required_byte_node >= 0
+    ):
+        if not _contains_one_byte_node[regex.nodes, required_byte_node](text):
+            return False
+    comptime if (
+        minimum_width > 0
+        and required_literal < 0
+        and backtracking_risk
+        and _nfa_node_supported(regex.nodes, regex.root)
+    ):
+        # Preserve the recursive matcher's excellent hit latency, then cap the
+        # remaining search with a linear-time automaton.
+        var probe_end = min(1, text.byte_length() - minimum_width + 1)
+        for start in range(probe_end):
+            if _match_node[regex.nodes, regex.root](text, start):
+                return True
+        return _nfa_search_from[regex](text, probe_end)
+    comptime if selective_start:
+        var candidate_count = text.byte_length() - minimum_width + 1
+
+        @always_inline
+        def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
+            comptime if width == 0:
+                for candidate in range(start, end):
+                    if _node_start_accepts[regex.nodes, regex.root](
+                        Int(text.as_bytes()[candidate])
+                    ) and _match_node[regex.nodes, regex.root](text, candidate):
+                        return True
+                return False
+            else:
+                var values = text.unsafe_ptr().unsafe_load[
+                    width=width, alignment=1
+                ](start)
+                var pending = pack_bits(
+                    _node_start_mask[regex.nodes, regex.root, width](values)
+                )
+                while pending != 0:
+                    var lane = Int(count_trailing_zeros(pending))
+                    pending &= pending - 1
+                    if _match_node[regex.nodes, regex.root](text, start + lane):
+                        return True
+                return False
+
+        return _search_simd_width_ladder(candidate_count, 0, scan)
+    else:
+        var end = text.byte_length() - minimum_width + 1
+        for start in range(end):
+            if _match_node[regex.nodes, regex.root](text, start):
+                return True
+    return False
+
+
+@always_inline
+def _search_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[LiteralNode]():
+        comptime literal = root[LiteralNode]
+        comptime if _static_source_is_root_literal[regex]():
+            return text.find(regex.source) >= 0
+        return text.find(literal.value) >= 0
+    comptime if _is_prefixed_infix_search[regex.nodes, root]():
+        return _search_prefixed_infix[regex.nodes, root](text)
+    return _search_planned[regex](text)
+
+
+@always_inline
+def search[regex: Regex](text: String) -> Bool:
+    """Return whether compile-time `regex` matches anywhere in `text`."""
+    return _search_span_impl[regex](text[byte = 0 : text.byte_length()])
+
+
+@always_inline
+def search_span[regex: Regex](text: ImmStringSpan) -> Bool:
+    """Search a borrowed string span without allocation."""
+    return _search_span_impl[regex](text)
+
+
+@always_inline
+def _count_nfa[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+    """Count ordered leftmost, non-overlapping Thompson-NFA matches."""
+    var total = 0
+    var search_start = 0
+    while search_start <= text.byte_length():
+        var result = _nfa_find_from[regex](text, search_start)
+        if not result:
+            break
+        var found = result.unsafe_value()
+        total += _match_checksum[sum_spans](found.consumed)
+        search_start = found.start + max(1, found.consumed)
+    return total
+
+
+@always_inline
+def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[LiteralNode]():
+        return _count_literal_root[regex, sum_spans](text)
+    comptime if root.isa[OrNode]():
+        comptime alternation = root[OrNode]
+        comptime if _is_greedy_dot_complement_alternation[
+            regex.nodes, regex.root
+        ]():
+            return _count_greedy_dot_complement_alternation[regex, sum_spans](
+                text
+            )
+        comptime if _is_multiline_literal_edge_alternation[
+            regex.nodes, regex.root
+        ]():
+            return _count_multiline_literal_edge_alternation[regex, sum_spans](
+                text
+            )
+        comptime if _all_literal_options[regex.nodes, alternation]():
+            return _count_literal_alternation[
+                regex.nodes, alternation, sum_spans
+            ](text)
+        comptime if _all_casefold_prefixed_sequence_options[
+            regex.nodes, alternation
+        ]():
+            return _count_casefold_prefixed_alternation[
+                regex, alternation, sum_spans
+            ](text)
+        comptime if _all_prefixed_sequence_options[regex.nodes, alternation]():
+            return _count_prefixed_alternation[regex, alternation, sum_spans](
+                text
+            )
+    # Keep direct planner callers on the same constant-time/SIMD primitives
+    # as public dispatch for fundamental Unicode-dot shapes.  These are
+    # execution properties, not workload-specific pattern kernels.
+    comptime unicode_dot_kind = _unicode_dot_kind[regex.nodes, regex.root]()
+    comptime if unicode_dot_kind >= 0:
+        return _count_unicode_dot[
+            unicode_dot_kind == CHAR_UNICODE_DOT, sum_spans
+        ](text)
+    comptime if _is_unicode_dotall_plus[regex.nodes, regex.root]():
+        if text.byte_length() == 0:
+            return 0
+        comptime if sum_spans:
+            return text.byte_length()
+        return 1
+    comptime if _is_whole_input_dotall_star[regex.nodes, regex.root]():
+        comptime if sum_spans:
+            return text.byte_length()
+        return 1 if text.byte_length() == 0 else 2
+    # Keep the detailed IPv4 shape check out of unrelated instantiations.
+    comptime if len(regex.nodes) == 30:
+        comptime if _is_mariomka_ipv4[regex.nodes, root]():
+            return _count_mariomka_ipv4[sum_spans](text)
+    comptime nested_dot_literal = _prefixed_nested_dot_literal_index[
+        regex.nodes, regex.root
+    ]()
+    comptime if nested_dot_literal >= 0:
+        return _count_prefixed_nested_dot_literal[
+            regex, nested_dot_literal, sum_spans
+        ](text)
+    # A root repeat over a byte predicate is a generic run-counting problem.
+    # Consume maximal runs once instead of invoking the matcher at every byte.
+    comptime if root.isa[RepeatNode]():
+        comptime repeat = root[RepeatNode]
+        comptime if repeat.minimum > 0 and _is_one_byte_class_node[
+            regex.nodes, repeat.child
+        ]():
+            return _count_one_byte_class_repeat[regex, sum_spans](text)
+    comptime if _is_nested_run_then_disjoint_class[regex.nodes, regex.root]():
+        return _count_nested_run_then_disjoint_class[regex, sum_spans](text)
+    comptime if _is_bounded_capitalized_word_sequence[
+        regex.nodes, regex.root
+    ]():
+        return _count_bounded_capitalized_word_sequence[regex, sum_spans](text)
+    comptime if _is_long_word_search[regex.nodes, root]():
+        return _count_long_word[regex, sum_spans](text)
+    comptime if _is_word_run_literal_suffix[regex.nodes, root]():
+        return _count_word_run_literal_suffix[regex, sum_spans](text)
+    # Treat word boundaries as a generic candidate source for any wrapped
+    # expression; test only actual boundary positions instead of every byte.
+    comptime if _is_word_boundary_wrapped[regex.nodes, root]():
+        return _count_word_boundary_wrapped[regex, sum_spans](text)
+    comptime if _is_adjacent_dot_stars_around_literal[
+        regex.nodes, regex.root
+    ]():
+        return _count_adjacent_dot_stars_around_literal[regex, sum_spans](text)
+    # Drive class-star/literal searches from the required literal instead of
+    # retrying the variable-width prefix at every byte.  This is the generic
+    # candidate plan for `[class]* literal ($|.*)` sequences.
+    comptime if _is_leading_class_literal_search[regex.nodes, regex.root]():
+        return _count_leading_class_literal[regex, sum_spans](text)
+    comptime if _is_bounded_prefix_literal_alternation[
+        regex.nodes, regex.root
+    ]():
+        return _count_bounded_prefix_literal_alternation[regex, sum_spans](text)
+    comptime if _is_class_literal_alternation_with_suffix[
+        regex.nodes, regex.root
+    ]():
+        return _count_class_literal_alternation_with_suffix[regex, sum_spans](
+            text
+        )
+    comptime if _is_symmetric_bounded_delimited_sequence[
+        regex.nodes, regex.root
+    ]():
+        comptime delimited_sequence = root[SequenceNode]
+        comptime delimited_repeat = regex.nodes[delimited_sequence.items[1]][
+            RepeatNode
+        ]
+        comptime if delimited_repeat.maximum >= 8:
+            return _count_bracket_prefixed_sequence[regex, sum_spans](text)
+    comptime if _is_repeated_lazy_dot_delimiter_suffix[
+        regex.nodes, regex.root
+    ]():
+        return _count_repeated_lazy_dot_delimiter_suffix[regex, sum_spans](text)
+    comptime delimiter_runs = _two_delimiter_bracket_runs_plan[
+        regex.nodes, regex.root
+    ]()
+    comptime if delimiter_runs:
+        return _count_two_delimiter_bracket_runs[
+            regex, delimiter_runs.unsafe_value(), sum_spans
+        ](text)
+    comptime run_suffix = _leading_repeat_literal_item[
+        regex.nodes, regex.root, False
+    ]()
+    comptime if run_suffix >= 0:
+        comptime sequence = root[SequenceNode]
+        comptime repeat = regex.nodes[sequence.items[0]][RepeatNode]
+        comptime literal = regex.nodes[sequence.items[run_suffix]][LiteralNode]
+        comptime if (
+            sequence.count == 2
+            and repeat.maximum == -1
+            and repeat.greedy
+            and _literal_bytes_all_accepted_by_node[
+                regex.nodes, repeat.child, literal.value, 0
+            ]()
+        ):
+            if text.byte_length() >= 65536:
+                return _count_greedy_run_literal_suffix[regex, sum_spans](text)
+    comptime leading_literal = _leading_repeat_literal_item[
+        regex.nodes, regex.root
+    ]()
+    comptime if leading_literal >= 0:
+        return _count_simple_infix[regex, leading_literal, sum_spans](text)
+    # A long literal between a leading byte predicate and a variable byte run
+    # is selective enough to justify driving the match from its terminal
+    # predicate. Short literals stay on the ordinary literal-anchor planner.
+    comptime if _is_reverse_suffix_class_sequence[regex.nodes, regex.root]():
+        comptime reverse_sequence = root[SequenceNode]
+        comptime reverse_literal = regex.nodes[reverse_sequence.items[1]][
+            LiteralNode
+        ]
+        comptime if reverse_literal.value.byte_length() >= 8:
+            return _count_reverse_suffix_class[regex, sum_spans](text)
+    comptime minimum_width = _minimum_node_width[regex.nodes, regex.root]()
+    comptime selective_start = (
+        minimum_width > 0
+        and _start_filter_is_selective[regex.nodes, regex.root]()
+    )
+    if minimum_width > text.byte_length():
+        return 0
+    comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
+        return _count_nfa[regex, sum_spans](text)
+    comptime if _is_start_anchored[regex.nodes, regex.root]():
+        var anchored = _match_node[regex.nodes, regex.root](text, 0)
+        if anchored:
+            return _match_checksum[sum_spans](
+                anchored.unsafe_value().consumed()
+            )
+        return 0
+    comptime end_anchored_width = _end_anchored_fixed_width[
+        regex.nodes, regex.root
+    ]()
+    comptime if end_anchored_width >= 0:
+        return _count_end_anchored_fixed[regex, end_anchored_width, sum_spans](
+            text
+        )
+    comptime required_literal = _required_literal_index[
+        regex.nodes, regex.root
+    ]()
+    comptime fixed_width = _fixed_node_width[regex.nodes, regex.root]()
+    comptime if fixed_width > 0:
+        return _count_fixed_width_prefiltered[regex, fixed_width, sum_spans](
+            text
+        )
+    comptime simple_infix_item = _simple_infix_literal_item_for_root[
+        regex.nodes, regex.root
+    ]()
+    comptime if simple_infix_item >= 0:
+        return _count_simple_infix[regex, simple_infix_item, sum_spans](text)
+    comptime simple_class_item = _simple_class_anchor_item_for_root[
+        regex.nodes, regex.root
+    ]()
+    comptime if simple_class_item >= 0:
+        return _count_simple_class_anchor[regex, simple_class_item, sum_spans](
+            text
+        )
+    comptime if required_literal >= 0:
+        comptime literal = regex.nodes[required_literal][LiteralNode]
+        comptime if not selective_start or literal.value.byte_length() == 1:
+            if text.find(literal.value) < 0:
+                return 0
+    comptime backtracking_risk = _has_generic_backtracking_risk[
+        regex.nodes, regex.root
+    ]()
+    comptime required_byte_node = _required_one_byte_node_index[
+        regex.nodes, regex.root
+    ]()
+    comptime if (
+        required_literal < 0 and backtracking_risk and required_byte_node >= 0
+    ):
+        if not _contains_one_byte_node[regex.nodes, required_byte_node](text):
+            return 0
+    comptime if (
+        minimum_width > 0
+        and required_literal < 0
+        and backtracking_risk
+        and _nfa_node_supported(regex.nodes, regex.root)
+    ):
+        var first = _match_node[regex.nodes, regex.root](text, 0)
+        if not first and not _nfa_search_from[regex](text, 1):
+            return 0
+    var total = 0
+    var start = 0
+    var end = text.byte_length() - minimum_width + 1
+    comptime if selective_start:
+
+        @always_inline
+        def scan[
+            width: Int
+        ](block_start: Int) {imm text, mut total, mut start,} -> Bool:
+            var values = text.unsafe_ptr().unsafe_load[
+                width=width, alignment=1
+            ](block_start)
+            var pending = pack_bits(
+                _node_start_mask[regex.nodes, regex.root, width](values)
+            )
+            while pending != 0:
+                var lane = Int(count_trailing_zeros(pending))
+                pending &= pending - 1
+                var candidate = block_start + lane
+                if candidate >= start:
+                    var result = _match_node[regex.nodes, regex.root](
+                        text, candidate
+                    )
+                    if result:
+                        var consumed = result.unsafe_value().consumed()
+                        total += _match_checksum[sum_spans](consumed)
+                        start = candidate + max(1, consumed)
+            return False
+
+        var offset = 0
+        _ = _consume_simd_width_ladder(end, offset, scan)
+        while offset < end:
+            if offset >= start and _node_start_accepts[regex.nodes, regex.root](
+                Int(text.as_bytes()[offset])
+            ):
+                var result = _match_node[regex.nodes, regex.root](text, offset)
+                if result:
+                    var consumed = result.unsafe_value().consumed()
+                    total += _match_checksum[sum_spans](consumed)
+                    start = offset + max(1, consumed)
+            offset += 1
+    else:
+        while start < end:
+            var result = _match_node[regex.nodes, regex.root](text, start)
+            if result:
+                var consumed = result.unsafe_value().consumed()
+                total += _match_checksum[sum_spans](consumed)
+                start += max(1, consumed)
+            else:
+                start += 1
+    return total
+
+
+@always_inline
+def _count_literal_root[
+    regex: Regex, sum_spans: Bool
+](text: ImmStringSpan) -> Int:
+    comptime literal = regex.nodes[regex.root][LiteralNode]
+    comptime literal_length = literal.value.byte_length()
+    comptime if literal_length == 0:
+        comptime if sum_spans:
+            return 0
+        return text.byte_length() + 1
+    comptime if literal_length == 1:
+        return _count_one_byte_atom[regex](text)
+    comptime unique_first = _literal_has_unique_first_byte[literal.value]()
+    comptime if (
+        16 <= literal_length <= 32
+        and unique_first
+        and _static_source_is_root_literal[regex]()
+    ):
+        var short_candidate_count = text.byte_length() - literal_length + 1
+        if (
+            CLASS_TAIL_SIMD_WIDTH
+            <= short_candidate_count
+            <= 2 * CLASS_TAIL_SIMD_WIDTH
+        ):
+            return _count_short_literal_simd_candidates[
+                regex.source, sum_spans
+            ](text)
+    comptime high_anchor = _literal_unique_high_byte_offset[literal.value]()
+    comptime if high_anchor >= 0:
+        if text.byte_length() >= 4096:
+            return _count_unique_anchor_literal[
+                literal.value, high_anchor, sum_spans
+            ](text)
+    comptime if literal_length >= 16 and unique_first:
+        if text.byte_length() >= 4096:
+            return _count_reverse_unbordered_literal[literal.value, sum_spans](
+                text
+            )
+    comptime if literal_length >= 2:
+        if text.byte_length() >= 4096:
+            return _count_edge_prefiltered_literal[literal.value, sum_spans](
+                text
+            )
+    comptime if _static_source_is_root_literal[regex]():
+        return _count_static_literal[regex.source, sum_spans](text)
+    var start = text.find(literal.value)
+    if start < 0:
+        return 0
+    var total = _match_checksum[sum_spans](literal_length)
+    while start + 2 * literal_length <= text.byte_length():
+        var next_start = start + literal_length
+        start = text.find(literal.value, next_start)
+        if start < 0:
+            break
+        total += _match_checksum[sum_spans](literal_length)
+    return total
+
+
+@always_inline
+def _count_impl[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+    """Compute a match count or matched-byte checksum."""
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[LiteralNode]():
+        return _count_literal_root[regex, sum_spans](text)
+    comptime unicode_dot_kind = _unicode_dot_kind[regex.nodes, regex.root]()
+    comptime if unicode_dot_kind >= 0:
+        return _count_planned[regex, sum_spans](text)
+    comptime if root.isa[CharClassNode]() or root.isa[BracketClassNode]():
+        return _count_one_byte_atom[regex](text)
+    comptime if _is_unicode_dotall_plus[regex.nodes, regex.root]():
+        if text.byte_length() == 0:
+            return 0
+        comptime if sum_spans:
+            return text.byte_length()
+        return 1
+    comptime if _is_whole_input_dotall_star[regex.nodes, regex.root]():
+        comptime if sum_spans:
+            return text.byte_length()
+        return 1 if text.byte_length() == 0 else 2
+    comptime if root.isa[RepeatNode]():
+        comptime repeat = root[RepeatNode]
+        comptime if (
+            repeat.minimum > 0
+            and _is_one_byte_class_node[regex.nodes, repeat.child]()
+        ):
+            return _count_one_byte_class_repeat[regex, sum_spans](text)
+        return _count_planned[regex, sum_spans](text)
+    comptime if _is_start_anchored[regex.nodes, regex.root]():
+        return _count_planned[regex, sum_spans](text)
+    # Keep the direct call here: an extra planner inlining layer measured
+    # materially slower for this otherwise shared generic anchor executor.
+    comptime if _is_word_run_literal_suffix[regex.nodes, root]():
+        return _count_word_run_literal_suffix[regex, sum_spans](text)
+    return _count_planned[regex, sum_spans](text)
+
+
+@always_inline
+def count_spans[regex: Regex](text: String) -> Int:
+    """Sum byte lengths of leftmost, non-overlapping matches in `text`."""
+    return _count_impl[regex, True](text[byte = 0 : text.byte_length()])
+
+
+@always_inline
+def count_spans_span[regex: Regex](text: ImmStringSpan) -> Int:
+    """Borrowed-input version of `count_spans`."""
+    return _count_impl[regex, True](text)
+
+
+@always_inline
+def count[regex: Regex](text: String) -> Int:
+    """Count leftmost, non-overlapping matches in `text`."""
+    return _count_impl[regex, False](text[byte = 0 : text.byte_length()])
+
+
+@always_inline
+def count_span[regex: Regex](text: ImmStringSpan) -> Int:
+    """Borrowed-input version of `count`."""
+    return _count_impl[regex, False](text)
