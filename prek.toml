@@ -1,0 +1,18 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+    { id = "check-added-large-files" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+    { id = "mojo-format", name = "Mojo Format", entry = "pixi run mojo format .", language = "system", pass_filenames = false, always_run = true },
+    # { id = "mojo-host-tests", name = "Mojo Host Tests", entry = "pixi run test_host", language = "system", pass_filenames = false, always_run = true }
+]
