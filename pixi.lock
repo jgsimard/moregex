@@ -65,10 +65,10 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/traitlets-5.16.1-pyhcf101f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda
-      - conda: https://conda.modular.com/max-nightly/linux-64/mojo-1.2.0.dev2026091205-release.conda
-      - conda: https://conda.modular.com/max-nightly/linux-64/mojo-compiler-1.2.0.dev2026091205-release.conda
-      - conda: https://conda.modular.com/max-nightly/noarch/mblack-26.7.0.dev2026091205-release.conda
-      - conda: https://conda.modular.com/max-nightly/noarch/mojo-python-1.2.0.dev2026091205-release.conda
+      - conda: https://conda.modular.com/max-nightly/linux-64/mojo-1.2.0.dev2026091305-release.conda
+      - conda: https://conda.modular.com/max-nightly/linux-64/mojo-compiler-1.2.0.dev2026091305-release.conda
+      - conda: https://conda.modular.com/max-nightly/noarch/mblack-26.7.0.dev2026091305-release.conda
+      - conda: https://conda.modular.com/max-nightly/noarch/mojo-python-1.2.0.dev2026091305-release.conda
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -758,31 +758,31 @@ packages:
   run_exports: {}
   size: 24190
   timestamp: 1779159948016
-- conda: https://conda.modular.com/max-nightly/linux-64/mojo-1.2.0.dev2026091205-release.conda
-  sha256: 38e8d97993a853df1031685e189fd75cb3ae14860790fceb6c2570a059d3f244
-  md5: 9b489dae94c6b91241a7fd8cf39b4da2
+- conda: https://conda.modular.com/max-nightly/linux-64/mojo-1.2.0.dev2026091305-release.conda
+  sha256: 1e62f2e9081d9dfca5368a93e16826afa01e5d46b9b1838e32aeb0eb4cf62eef
+  md5: 368b89eb20e8505e159434bca179de90
   depends:
   - python >=3.10
-  - mojo-compiler ==1.2.0.dev2026091205
-  - mblack ==26.7.0.dev2026091205
+  - mojo-compiler ==1.2.0.dev2026091305
+  - mblack ==26.7.0.dev2026091305
   - jupyter_client >=8.6.2,<8.7
   license: LicenseRef-Modular-Proprietary
   run_exports: {}
-  size: 117690948
-  timestamp: 1789190685197
-- conda: https://conda.modular.com/max-nightly/linux-64/mojo-compiler-1.2.0.dev2026091205-release.conda
-  sha256: 512621ce64dd51975c0d963d63838c8e66a6600d63abd7aed219f86c4df665bc
-  md5: 498156ddfb8d101eeb7b6e1b2c68eed0
+  size: 117691776
+  timestamp: 1789277051235
+- conda: https://conda.modular.com/max-nightly/linux-64/mojo-compiler-1.2.0.dev2026091305-release.conda
+  sha256: e6549dcad34a6713b5a0aab03de86fe4f7bacb99afd4e27a587aa543d62c1a19
+  md5: f1ee87ea6bdb479a5d44f8e9b58f635a
   depends:
-  - mojo-python ==1.2.0.dev2026091205
+  - mojo-python ==1.2.0.dev2026091305
   license: LicenseRef-Modular-Proprietary
   run_exports: {}
-  size: 69806820
-  timestamp: 1789190685900
-- conda: https://conda.modular.com/max-nightly/noarch/mblack-26.7.0.dev2026091205-release.conda
+  size: 69806636
+  timestamp: 1789277048989
+- conda: https://conda.modular.com/max-nightly/noarch/mblack-26.7.0.dev2026091305-release.conda
   noarch: python
-  sha256: 145db345635e05f9d37ef3406cc654c584865918dddcdc797364ab6dbf99f4af
-  md5: f273f281008ed4b873d7a9412700f819
+  sha256: 05e3f1572b03176b46c5edc4b3f727414797de6e83eb3848ee03d2ebe0c2908f
+  md5: 415bfc2843e4307041dcec44e999a25e
   depends:
   - python >=3.10
   - click >=8.0.0
@@ -794,14 +794,14 @@ packages:
   license: LicenseRef-Modular-Proprietary
   run_exports: {}
   size: 138391
-  timestamp: 1789190605129
-- conda: https://conda.modular.com/max-nightly/noarch/mojo-python-1.2.0.dev2026091205-release.conda
+  timestamp: 1789276955250
+- conda: https://conda.modular.com/max-nightly/noarch/mojo-python-1.2.0.dev2026091305-release.conda
   noarch: python
-  sha256: cffe6d375fa17cda4e4e2a8c5731e3fa6ca8db69922ae3bd3d57d86d8a86eb7d
-  md5: 907a134eed73e3a7c6e646d4a933c0cf
+  sha256: 527f1dceaf9c7e57733edfb51358e26bb77e0f37268cfa3fb0e5a95dd054204c
+  md5: e1dd9088713fb9200fdc82ddd02f20d8
   depends:
   - python >=3.10
   license: LicenseRef-Modular-Proprietary
   run_exports: {}
-  size: 24212
-  timestamp: 1789190608055
+  size: 24233
+  timestamp: 1789276955181

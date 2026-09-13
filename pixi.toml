@@ -26,5 +26,5 @@ bench-rebar-fallback-test = "REBAR_VERIFY_ONLY=1 bash scripts/run_rebar_fallback
 bench-rebar-fallback = "bash scripts/run_rebar_fallback_benchmarks.sh"
 
 [dependencies]
-mojo = ">=1.2.0.dev2026091205,<2"
+mojo = ">=1.2.0.dev2026091305,<2"
 vectorscan = ">=5.4.13,<6"
