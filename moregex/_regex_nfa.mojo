@@ -8,6 +8,7 @@ from ._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
+    CaptureNode,
     CharClassNode,
     EmptyNode,
     LiteralNode,
@@ -17,6 +18,7 @@ from ._ast import (
     SequenceNode,
     ZeroWidthNode,
 )
+from ._regex_analysis import _is_start_anchored
 from ._regex_common import (
     _build_bracket_masks,
     _runtime_class_accepts,
@@ -31,6 +33,8 @@ comptime _NFA_CLASS = 2
 comptime _NFA_BRACKET = 3
 comptime _NFA_ASSERT = 4
 comptime _NFA_SPLIT = 5
+comptime _NFA_CAPTURE_START = 6
+comptime _NFA_CAPTURE_END = 7
 comptime _NFA_STRICT_END = -1
 
 
@@ -56,6 +60,12 @@ struct _NFABitStates(ImplicitlyCopyable, TrivialRegisterPassable):
 struct _NFAMatch(ImplicitlyCopyable, TrivialRegisterPassable):
     var start: Int
     var consumed: Int
+
+
+@fieldwise_init
+struct _NFACaptureMatch[capture_count: Int](ImplicitlyCopyable):
+    var starts: StaticTuple[Int, Self.capture_count + 1]
+    var ends: StaticTuple[Int, Self.capture_count + 1]
 
 
 def _emit_instruction(
@@ -183,6 +193,15 @@ def _compile_node(
     if node.isa[ZeroWidthNode]():
         return _emit_instruction(
             program, _NFA_ASSERT, continuation, -1, node[ZeroWidthNode].kind
+        )
+    if node.isa[CaptureNode]():
+        ref capture = node[CaptureNode]
+        var end = _emit_instruction(
+            program, _NFA_CAPTURE_END, continuation, -1, capture.index
+        )
+        var child = _compile_node(nodes, capture.child, program, end)
+        return _emit_instruction(
+            program, _NFA_CAPTURE_START, child, -1, capture.index
         )
     if node.isa[OrNode]():
         ref alternation = node[OrNode]
@@ -404,13 +423,233 @@ def _nfa_ordered_match[
                 return _NFAMatch(
                     candidate_start, candidate_end - candidate_start
                 )
-            return None
+            comptime if not unanchored:
+                return None
         var temporary = current
         current = following
         following = temporary
         var temporary_starts = current_starts
         current_starts = following_starts
         following_starts = temporary_starts
+        current_count = following_count
+        position += 1
+
+
+@always_inline
+def _capture_match_result[
+    capture_count: Int, slot_count: Int
+](
+    start: Int,
+    end: Int,
+    slots: StaticTuple[Int, slot_count],
+) -> _NFACaptureMatch[capture_count]:
+    var starts = StaticTuple[Int, capture_count + 1]()
+    var ends = StaticTuple[Int, capture_count + 1]()
+    starts[0] = start
+    ends[0] = end
+    comptime for group in range(capture_count):
+        starts[group + 1] = slots[2 * group]
+        ends[group + 1] = slots[2 * group + 1]
+    return _NFACaptureMatch(starts, ends)
+
+
+@always_inline
+def _add_ordered_capture_closure[
+    state_count: Int,
+    slot_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+](
+    text: ImmStringSpan,
+    position: Int,
+    initial: Int,
+    thread_start: Int,
+    initial_slots: StaticTuple[Int, slot_count],
+    mut states: StaticTuple[Int, state_count],
+    mut starts: StaticTuple[Int, state_count],
+    mut slots: StaticTuple[Int, state_count * slot_count],
+    mut count: Int,
+    mut seen: StaticTuple[Int, state_count],
+    generation: Int,
+):
+    """Append an ordered epsilon closure while carrying capture offsets."""
+    var stack = StaticTuple[Int, 2 * state_count]()
+    var stack_slots = StaticTuple[Int, 2 * state_count * slot_count]()
+    var stack_count = 1
+    stack[0] = initial
+    comptime for slot in range(slot_count):
+        stack_slots[slot] = initial_slots[slot]
+
+    while stack_count > 0:
+        stack_count -= 1
+        var pc = stack[stack_count]
+        if seen[pc] == generation:
+            continue
+        seen[pc] = generation
+        var values = StaticTuple[Int, slot_count]()
+        comptime for slot in range(slot_count):
+            values[slot] = stack_slots[stack_count * slot_count + slot]
+        var instruction = program[pc]
+        if instruction.kind == _NFA_SPLIT:
+            stack[stack_count] = instruction.out2
+            comptime for slot in range(slot_count):
+                stack_slots[stack_count * slot_count + slot] = values[slot]
+            stack_count += 1
+            stack[stack_count] = instruction.out1
+            comptime for slot in range(slot_count):
+                stack_slots[stack_count * slot_count + slot] = values[slot]
+            stack_count += 1
+        elif instruction.kind == _NFA_ASSERT:
+            if _runtime_assertion_matches(instruction.arg, text, position):
+                stack[stack_count] = instruction.out1
+                comptime for slot in range(slot_count):
+                    stack_slots[stack_count * slot_count + slot] = values[slot]
+                stack_count += 1
+        elif (
+            instruction.kind == _NFA_CAPTURE_START
+            or instruction.kind == _NFA_CAPTURE_END
+        ):
+            var slot = 2 * (instruction.arg - 1)
+            if instruction.kind == _NFA_CAPTURE_END:
+                slot += 1
+            values[slot] = position
+            stack[stack_count] = instruction.out1
+            comptime for i in range(slot_count):
+                stack_slots[stack_count * slot_count + i] = values[i]
+            stack_count += 1
+        else:
+            states[count] = pc
+            starts[count] = thread_start
+            comptime for slot in range(slot_count):
+                slots[count * slot_count + slot] = values[slot]
+            count += 1
+
+
+@always_inline
+def _nfa_ordered_capture_match[
+    state_count: Int,
+    capture_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+    start_pc: Int,
+    unanchored: Bool,
+](text: ImmStringSpan, search_start: Int) -> Optional[
+    _NFACaptureMatch[capture_count]
+]:
+    """Return a prioritized leftmost-first match and numbered captures."""
+    comptime slot_count = 2 * capture_count
+    var current = StaticTuple[Int, state_count]()
+    var current_starts = StaticTuple[Int, state_count]()
+    var current_slots = StaticTuple[Int, state_count * slot_count]()
+    var following = StaticTuple[Int, state_count]()
+    var following_starts = StaticTuple[Int, state_count]()
+    var following_slots = StaticTuple[Int, state_count * slot_count]()
+    var seen = StaticTuple[Int, state_count]()
+    var empty_slots = StaticTuple[Int, slot_count]()
+    var candidate_slots = StaticTuple[Int, slot_count]()
+    for i in range(state_count):
+        seen[i] = 0
+    comptime for slot in range(slot_count):
+        empty_slots[slot] = -1
+        candidate_slots[slot] = -1
+
+    var current_count = 0
+    var generation = 1
+    _add_ordered_capture_closure[state_count, slot_count, program](
+        text,
+        search_start,
+        start_pc,
+        search_start,
+        empty_slots,
+        current,
+        current_starts,
+        current_slots,
+        current_count,
+        seen,
+        generation,
+    )
+
+    var candidate_start = -1
+    var candidate_end = -1
+    var position = search_start
+    while True:
+        var match_index = -1
+        for i in range(current_count):
+            if program[current[i]].kind == _NFA_MATCH:
+                match_index = i
+                break
+        if match_index >= 0:
+            candidate_start = current_starts[match_index]
+            candidate_end = position
+            comptime for slot in range(slot_count):
+                candidate_slots[slot] = current_slots[
+                    match_index * slot_count + slot
+                ]
+            current_count = match_index
+            if current_count == 0:
+                return _capture_match_result[capture_count, slot_count](
+                    candidate_start, candidate_end, candidate_slots
+                )
+
+        if position >= text.byte_length():
+            if candidate_start >= 0:
+                return _capture_match_result[capture_count, slot_count](
+                    candidate_start, candidate_end, candidate_slots
+                )
+            return None
+
+        generation += 1
+        var following_count = 0
+        var value = Int(text.as_bytes()[position])
+        for i in range(current_count):
+            var pc = current[i]
+            if _instruction_accepts[state_count, program](pc, value):
+                var thread_slots = StaticTuple[Int, slot_count]()
+                comptime for slot in range(slot_count):
+                    thread_slots[slot] = current_slots[i * slot_count + slot]
+                _add_ordered_capture_closure[state_count, slot_count, program](
+                    text,
+                    position + 1,
+                    program[pc].out1,
+                    current_starts[i],
+                    thread_slots,
+                    following,
+                    following_starts,
+                    following_slots,
+                    following_count,
+                    seen,
+                    generation,
+                )
+        comptime if unanchored:
+            if candidate_start < 0:
+                _add_ordered_capture_closure[state_count, slot_count, program](
+                    text,
+                    position + 1,
+                    start_pc,
+                    position + 1,
+                    empty_slots,
+                    following,
+                    following_starts,
+                    following_slots,
+                    following_count,
+                    seen,
+                    generation,
+                )
+
+        if following_count == 0:
+            if candidate_start >= 0:
+                return _capture_match_result[capture_count, slot_count](
+                    candidate_start, candidate_end, candidate_slots
+                )
+            comptime if not unanchored:
+                return None
+        var temporary = current
+        current = following
+        following = temporary
+        var temporary_starts = current_starts
+        current_starts = following_starts
+        following_starts = temporary_starts
+        var temporary_slots = current_slots
+        current_slots = following_slots
+        following_slots = temporary_slots
         current_count = following_count
         position += 1
 
@@ -733,9 +972,30 @@ def _nfa_find_from[
     comptime start_pc = compiled[1]
     comptime state_count = len(program_list)
     comptime program = _materialize_program[program_list, state_count]()
-    return _nfa_ordered_match[state_count, program, start_pc, True](
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
+    return _nfa_ordered_match[state_count, program, start_pc, unanchored](
         text, search_start
     )
+
+
+@always_inline
+def _nfa_find_captures[
+    regex: Regex
+](text: ImmStringSpan, search_start: Int) -> Optional[
+    _NFACaptureMatch[regex.capture_count]
+]:
+    """Return the next match with capture offsets from the preserved AST."""
+    comptime compiled = _compile_program(
+        regex.capture_nodes, regex.capture_root
+    )
+    comptime program_list = compiled[0]
+    comptime start_pc = compiled[1]
+    comptime state_count = len(program_list)
+    comptime program = _materialize_program[program_list, state_count]()
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
+    return _nfa_ordered_capture_match[
+        state_count, regex.capture_count, program, start_pc, unanchored
+    ](text, search_start)
 
 
 @always_inline

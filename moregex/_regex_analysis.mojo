@@ -33,7 +33,7 @@ from ._regex_common import (
     _byte_range_mask,
     _class_mask,
 )
-from ._regex_semantics import _semantic_fixed_width
+from ._regex_semantics import _semantic_fixed_width, _semantic_maximum_width
 
 
 def _all_literal_options[
@@ -133,6 +133,11 @@ def _minimum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
         return repeat.minimum * _minimum_node_width[nodes, repeat.child]()
     else:
         return _minimum_sequence_width[nodes, node[SequenceNode], 0]()
+
+
+def _maximum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return the maximum bytes consumed, or -1 when unbounded."""
+    return comptime (_semantic_maximum_width(nodes, node_index))
 
 
 def _sequence_required_literal_index[
@@ -854,8 +859,37 @@ def _is_start_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
         return True
     comptime if node.isa[SequenceNode]():
         comptime sequence = node[SequenceNode]
-        comptime if sequence.count > 0:
-            return _is_start_assertion_node[nodes, sequence.items[0]]()
+        comptime for i in range(sequence.count):
+            comptime item = nodes[sequence.items[i]]
+            comptime if item.isa[EmptyNode]():
+                continue
+            comptime if item.isa[ZeroWidthNode]():
+                comptime if _is_start_assertion_node[
+                    nodes, sequence.items[i]
+                ]():
+                    return True
+                continue
+            return False
+    return False
+
+
+def _is_end_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
+    """Return whether the expression requires input end (or its final LF)."""
+    comptime node = nodes[node_index]
+    comptime if _is_end_assertion_node[nodes, node_index]():
+        return True
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime for offset in range(sequence.count):
+            comptime i = sequence.count - offset - 1
+            comptime item = nodes[sequence.items[i]]
+            comptime if item.isa[EmptyNode]():
+                continue
+            comptime if item.isa[ZeroWidthNode]():
+                comptime if _is_end_assertion_node[nodes, sequence.items[i]]():
+                    return True
+                continue
+            return False
     return False
 
 

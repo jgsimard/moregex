@@ -284,6 +284,10 @@ def test_anchors() raises:
     comptime bounded_exact = Regex("^a{2,5}$")
     assert_equal(count[bounded_exact]("a" * 10000), 0)
     assert_equal(count_spans[bounded_exact]("aaaa"), 4)
+    comptime alternative_exact = Regex("^((aaa)|(aa))$")
+    assert_equal(count[alternative_exact]("a" * 10000), 0)
+    assert_equal(count_spans[alternative_exact]("aaa"), 3)
+    assert_equal(count_spans[alternative_exact]("aa\n"), 2)
 
 
 def test_word_boundaries() raises:

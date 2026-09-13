@@ -28,6 +28,7 @@ from ._regex_analysis import (
     _count_unicode_dot,
     _end_anchored_fixed_width,
     _fixed_node_width,
+    _maximum_node_width,
     _has_generic_backtracking_risk,
     _is_adjacent_dot_stars_around_literal,
     _is_bounded_capitalized_word_sequence,
@@ -41,6 +42,7 @@ from ._regex_analysis import (
     _is_one_byte_class_node,
     _is_repeated_lazy_dot_delimiter_suffix,
     _is_reverse_suffix_class_sequence,
+    _is_end_anchored,
     _is_start_anchored,
     _is_symmetric_bounded_delimited_sequence,
     _is_unicode_dotall_plus,
@@ -139,6 +141,17 @@ from ._regex_literals import (
 
 
 @always_inline
+def _anchored_width_rejects[regex: Regex](length: Int) -> Bool:
+    comptime if _is_start_anchored[
+        regex.nodes, regex.root
+    ]() and _is_end_anchored[regex.nodes, regex.root]():
+        comptime maximum = _maximum_node_width[regex.nodes, regex.root]()
+        comptime if maximum >= 0:
+            return length > maximum + 1
+    return False
+
+
+@always_inline
 def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
@@ -149,6 +162,8 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         and _start_filter_is_selective[regex.nodes, regex.root]()
     )
     if minimum_width > text.byte_length():
+        return False
+    if _anchored_width_rejects[regex](text.byte_length()):
         return False
     comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
         return _nfa_search_from[regex](text, 0)
@@ -489,6 +504,8 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         and _start_filter_is_selective[regex.nodes, regex.root]()
     )
     if minimum_width > text.byte_length():
+        return 0
+    if _anchored_width_rejects[regex](text.byte_length()):
         return 0
     comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
         return _count_nfa[regex, sum_spans](text)

@@ -20,11 +20,13 @@ from ._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
+    CaptureNode,
     CharClassNode,
     EmptyNode,
     LiteralNode,
     MAX_BRANCHES,
     MAX_CLASS_RANGES,
+    MAX_CAPTURE_GROUPS,
     MAX_SEQUENCE_ITEMS,
     OrNode,
     RegexNode,
@@ -52,6 +54,54 @@ def _is_repeat_operator(ch: Int) -> Bool:
     return ch == ord("*") or ch == ord("+") or ch == ord("?") or ch == ord("{")
 
 
+def _append_without_captures(
+    nodes: List[RegexNode], node_index: Int, mut result: List[RegexNode]
+) -> Int:
+    """Copy an AST while removing capture-only wrapper nodes."""
+    ref node = nodes[node_index]
+    if node.isa[CaptureNode]():
+        return _append_without_captures(nodes, node[CaptureNode].child, result)
+
+    if node.isa[RepeatNode]():
+        ref repeat = node[RepeatNode]
+        var child = _append_without_captures(nodes, repeat.child, result)
+        result.append(
+            RepeatNode(child, repeat.minimum, repeat.maximum, repeat.greedy)
+        )
+    elif node.isa[SequenceNode]():
+        ref sequence = node[SequenceNode]
+        var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
+        for i in range(sequence.count):
+            items[i] = _append_without_captures(
+                nodes, sequence.items[i], result
+            )
+        result.append(SequenceNode(items, sequence.count))
+    elif node.isa[OrNode]():
+        ref alternation = node[OrNode]
+        var options = StaticTuple[Int, MAX_BRANCHES]()
+        for i in range(alternation.count):
+            options[i] = _append_without_captures(
+                nodes, alternation.options[i], result
+            )
+        result.append(OrNode(options, alternation.count))
+    elif node.isa[EmptyNode]():
+        result.append(EmptyNode())
+    elif node.isa[LiteralNode]():
+        result.append(LiteralNode(node[LiteralNode].value))
+    elif node.isa[CharClassNode]():
+        result.append(CharClassNode(node[CharClassNode].kind))
+    elif node.isa[BracketClassNode]():
+        ref bracket = node[BracketClassNode]
+        result.append(
+            BracketClassNode(
+                bracket.lows, bracket.highs, bracket.count, bracket.negated
+            )
+        )
+    else:
+        result.append(ZeroWidthNode(node[ZeroWidthNode].kind))
+    return len(result) - 1
+
+
 struct _Parser(Movable):
     var pattern: String
     var case_insensitive: Bool
@@ -60,6 +110,7 @@ struct _Parser(Movable):
     var multi_line: Bool
     var pos: Int
     var nodes: List[RegexNode]
+    var capture_count: Int
 
     def __init__(
         out self, pattern: String, case_insensitive: Bool, unicode: Bool
@@ -71,6 +122,7 @@ struct _Parser(Movable):
         self.multi_line = False
         self.pos = 0
         self.nodes = List[RegexNode]()
+        self.capture_count = 0
 
     def __moveinit__(out self, deinit existing: Self):
         self.pattern = existing.pattern^
@@ -80,6 +132,7 @@ struct _Parser(Movable):
         self.multi_line = existing.multi_line
         self.pos = existing.pos
         self.nodes = existing.nodes^
+        self.capture_count = existing.capture_count
 
     @always_inline
     def peek_byte(self) -> Int:
@@ -153,11 +206,15 @@ struct _Parser(Movable):
     def parse_group(mut self) raises -> Int:
         """Parse a capturing-equivalent or inline-flag group after `(`."""
         if self.peek_byte() != ord("?"):
+            self.capture_count += 1
+            if self.capture_count > MAX_CAPTURE_GROUPS:
+                raise Error("too many capture groups")
+            var capture_index = self.capture_count
             var child = self.parse_or()
             if self.peek_byte() != ord(")"):
                 raise Error("expected closing parenthesis")
             _ = self.advance_byte()
-            return child
+            return self.add(CaptureNode(child, capture_index))
 
         _ = self.advance_byte()
         if self.peek_byte() == ord(":"):

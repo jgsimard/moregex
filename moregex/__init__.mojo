@@ -9,3 +9,4 @@ from .regex import (
     search,
     search_span,
 )
+from ._regex_find import RegexMatch, find, find_span, finditer, finditer_span
