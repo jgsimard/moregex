@@ -54,6 +54,30 @@ def _is_repeat_operator(ch: Int) -> Bool:
     return ch == ord("*") or ch == ord("+") or ch == ord("?") or ch == ord("{")
 
 
+def _same_bracket_class(
+    left: BracketClassNode, right: BracketClassNode
+) -> Bool:
+    if left.negated != right.negated or left.count != right.count:
+        return False
+    for i in range(left.count):
+        if left.lows[i] != right.lows[i] or left.highs[i] != right.highs[i]:
+            return False
+    return True
+
+
+def _byte_sequence_cardinality(nodes: List[RegexNode], node_index: Int) -> Int:
+    """Return the number of byte strings represented by a bracket sequence."""
+    ref sequence = nodes[node_index][SequenceNode]
+    var cardinality = 1
+    for i in range(sequence.count):
+        ref bracket = nodes[sequence.items[i]][BracketClassNode]
+        var choices = 0
+        for item in range(bracket.count):
+            choices += bracket.highs[item] - bracket.lows[item] + 1
+        cardinality *= choices
+    return cardinality
+
+
 def _append_without_captures(
     nodes: List[RegexNode], node_index: Int, mut result: List[RegexNode]
 ) -> Int:
@@ -264,7 +288,316 @@ struct _Parser(Movable):
         var root = self.parse_or()
         if self.pos != self.pattern.byte_length():
             raise Error(String(t"unexpected '{self.peek_codepoint()}'"))
+        root = self._normalize_literal_cartesian(root)
+        if (
+            self.unicode
+            and self.pattern.find("][") >= 0
+            and self.pattern.find("|") >= 0
+        ):
+            root = self._normalize_utf8_repeat_classes(root)
+            root = self._normalize_root_utf8_repeat(root)
         return root
+
+    def _normalize_literal_cartesian(mut self, root_index: Int) -> Int:
+        """Factor a complete ASCII literal product into a bracket sequence."""
+        ref root_node = self.nodes[root_index]
+        if not root_node.isa[OrNode]():
+            return root_index
+        var alternation = root_node[OrNode]
+        if alternation.count < 2:
+            return root_index
+        ref first_node = self.nodes[alternation.options[0]]
+        if not first_node.isa[LiteralNode]():
+            return root_index
+        var byte_length = first_node[LiteralNode].value.byte_length()
+        if byte_length == 0 or byte_length > MAX_SEQUENCE_ITEMS:
+            return root_index
+        for option in range(alternation.count):
+            ref node = self.nodes[alternation.options[option]]
+            if (
+                not node.isa[LiteralNode]()
+                or node[LiteralNode].value.byte_length() != byte_length
+            ):
+                return root_index
+            for position in range(byte_length):
+                if Int(node[LiteralNode].value.as_bytes()[position]) >= 128:
+                    return root_index
+            for prior in range(option):
+                ref prior_node = self.nodes[alternation.options[prior]][
+                    LiteralNode
+                ]
+                if node[LiteralNode].value == prior_node.value:
+                    return root_index
+
+        var product = 1
+        for position in range(byte_length):
+            var values = List[Int]()
+            for option in range(alternation.count):
+                ref literal = self.nodes[alternation.options[option]][
+                    LiteralNode
+                ]
+                var value = Int(literal.value.as_bytes()[position])
+                var present = False
+                for existing in values:
+                    present = present or existing == value
+                if not present:
+                    values.append(value)
+            product *= len(values)
+            if product > alternation.count:
+                return root_index
+        if product != alternation.count:
+            return root_index
+
+        var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
+        for position in range(byte_length):
+            var lows = List[Int]()
+            var highs = List[Int]()
+            for option in range(alternation.count):
+                ref literal = self.nodes[alternation.options[option]][
+                    LiteralNode
+                ]
+                var value = Int(literal.value.as_bytes()[position])
+                _append_range(lows, highs, value, value)
+            if len(lows) > MAX_CLASS_RANGES:
+                return root_index
+            var static_lows = StaticTuple[Int, MAX_CLASS_RANGES]()
+            var static_highs = StaticTuple[Int, MAX_CLASS_RANGES]()
+            for item in range(len(lows)):
+                static_lows[item] = lows[item]
+                static_highs[item] = highs[item]
+            items[position] = self.add(
+                BracketClassNode(static_lows, static_highs, len(lows), False)
+            )
+        if byte_length == 1:
+            return items[0]
+        return self.add(SequenceNode(items, byte_length))
+
+    def _normalize_utf8_class_or(mut self, child_index: Int) -> Int:
+        """Merge sibling one-byte brackets in one UTF-8 class alternation."""
+        ref child_node = self.nodes[child_index]
+        if not child_node.isa[OrNode]():
+            return child_index
+        var alternation = child_node[OrNode]
+        var bracket_count = 0
+        var has_sequence = False
+        var lows = List[Int]()
+        var highs = List[Int]()
+        for i in range(alternation.count):
+            ref option = self.nodes[alternation.options[i]]
+            if option.isa[BracketClassNode]():
+                ref bracket = option[BracketClassNode]
+                if bracket.negated:
+                    return child_index
+                bracket_count += 1
+                for item in range(bracket.count):
+                    _append_range(
+                        lows,
+                        highs,
+                        bracket.lows[item],
+                        bracket.highs[item],
+                    )
+            elif option.isa[SequenceNode]():
+                has_sequence = True
+            else:
+                return child_index
+        if (
+            bracket_count < 2
+            or not has_sequence
+            or len(lows) > MAX_CLASS_RANGES
+        ):
+            return child_index
+
+        var static_lows = StaticTuple[Int, MAX_CLASS_RANGES]()
+        var static_highs = StaticTuple[Int, MAX_CLASS_RANGES]()
+        for i in range(len(lows)):
+            static_lows[i] = lows[i]
+            static_highs[i] = highs[i]
+        var merged = self.add(
+            BracketClassNode(static_lows, static_highs, len(lows), False)
+        )
+        var options = StaticTuple[Int, MAX_BRANCHES]()
+        var count = 0
+        var emitted_bracket = False
+        for i in range(alternation.count):
+            var option_index = alternation.options[i]
+            if self.nodes[option_index].isa[BracketClassNode]():
+                if not emitted_bracket:
+                    options[count] = merged
+                    count += 1
+                    emitted_bracket = True
+            else:
+                options[count] = option_index
+                count += 1
+        return self.add(OrNode(options, count))
+
+    def _normalize_utf8_repeat(mut self, repeat_index: Int) -> Int:
+        ref node = self.nodes[repeat_index]
+        if not node.isa[RepeatNode]():
+            return repeat_index
+        var repeat = node[RepeatNode]
+        var child = self._normalize_utf8_class_or(repeat.child)
+        if child == repeat.child:
+            return repeat_index
+        return self.add(
+            RepeatNode(
+                child,
+                repeat.minimum,
+                repeat.maximum,
+                repeat.greedy,
+            )
+        )
+
+    def _normalize_utf8_repeat_classes(mut self, root_index: Int) -> Int:
+        """Normalize UTF-8 class repeats at the top execution level."""
+        ref root = self.nodes[root_index]
+        if root.isa[RepeatNode]():
+            return self._normalize_utf8_repeat(root_index)
+        if not root.isa[SequenceNode]():
+            return root_index
+        var sequence = root[SequenceNode]
+        var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
+        var changed = False
+        for i in range(sequence.count):
+            items[i] = self._normalize_utf8_repeat(sequence.items[i])
+            changed = changed or items[i] != sequence.items[i]
+        if not changed:
+            return root_index
+        return self.add(SequenceNode(items, sequence.count))
+
+    def _normalize_root_utf8_repeat(mut self, root_index: Int) -> Int:
+        """Factor equal lead-byte classes in a root UTF-8 class repeat."""
+        ref root_node = self.nodes[root_index]
+        if not root_node.isa[RepeatNode]():
+            return root_index
+        var repeat = root_node[RepeatNode]
+        ref child_node = self.nodes[repeat.child]
+        if not child_node.isa[OrNode]():
+            return root_index
+        var alternation = child_node[OrNode]
+        for i in range(alternation.count):
+            ref option = self.nodes[alternation.options[i]]
+            if option.isa[BracketClassNode]():
+                continue
+            if not option.isa[SequenceNode]():
+                return root_index
+            ref sequence = option[SequenceNode]
+            if sequence.count != 2:
+                return root_index
+            if (
+                not self.nodes[sequence.items[0]].isa[BracketClassNode]()
+                or not self.nodes[sequence.items[1]].isa[BracketClassNode]()
+            ):
+                return root_index
+
+        var used = List[Bool]()
+        for _ in range(alternation.count):
+            used.append(False)
+        var factored = List[Int]()
+        var changed = False
+        for i in range(alternation.count):
+            if used[i]:
+                continue
+            var option_index = alternation.options[i]
+            ref option = self.nodes[option_index]
+            if option.isa[BracketClassNode]():
+                factored.append(option_index)
+                continue
+            ref sequence = option[SequenceNode]
+            var first_index = sequence.items[0]
+            ref first = self.nodes[first_index][BracketClassNode]
+            ref second = self.nodes[sequence.items[1]][BracketClassNode]
+            if first.negated or second.negated:
+                factored.append(option_index)
+                continue
+            var members = List[Int]()
+            members.append(i)
+            var lows = List[Int]()
+            var highs = List[Int]()
+            for item in range(second.count):
+                _append_range(
+                    lows, highs, second.lows[item], second.highs[item]
+                )
+            for j in range(i + 1, alternation.count):
+                if used[j]:
+                    continue
+                ref candidate_node = self.nodes[alternation.options[j]]
+                if not candidate_node.isa[SequenceNode]():
+                    continue
+                ref candidate = candidate_node[SequenceNode]
+                ref candidate_first = self.nodes[candidate.items[0]][
+                    BracketClassNode
+                ]
+                ref candidate_second = self.nodes[candidate.items[1]][
+                    BracketClassNode
+                ]
+                if candidate_second.negated or not _same_bracket_class(
+                    first, candidate_first
+                ):
+                    continue
+                members.append(j)
+                for item in range(candidate_second.count):
+                    _append_range(
+                        lows,
+                        highs,
+                        candidate_second.lows[item],
+                        candidate_second.highs[item],
+                    )
+            if len(members) == 1 or len(lows) > MAX_CLASS_RANGES:
+                factored.append(option_index)
+                continue
+            changed = True
+            for member in members:
+                used[member] = True
+            var static_lows = StaticTuple[Int, MAX_CLASS_RANGES]()
+            var static_highs = StaticTuple[Int, MAX_CLASS_RANGES]()
+            for item in range(len(lows)):
+                static_lows[item] = lows[item]
+                static_highs[item] = highs[item]
+            var suffix_index = self.add(
+                BracketClassNode(static_lows, static_highs, len(lows), False)
+            )
+            var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
+            items[0] = first_index
+            items[1] = suffix_index
+            factored.append(self.add(SequenceNode(items, 2)))
+        # Equal-width byte-sequence alternatives have identical observable
+        # matching behavior. Test broader ranges first so common Unicode
+        # blocks do not pay for narrow exceptional branches on every scalar.
+        for i in range(len(factored)):
+            if not self.nodes[factored[i]].isa[SequenceNode]():
+                continue
+            var best = i
+            var best_cardinality = _byte_sequence_cardinality(
+                self.nodes, factored[i]
+            )
+            for j in range(i + 1, len(factored)):
+                if not self.nodes[factored[j]].isa[SequenceNode]():
+                    continue
+                var cardinality = _byte_sequence_cardinality(
+                    self.nodes, factored[j]
+                )
+                if cardinality > best_cardinality:
+                    best = j
+                    best_cardinality = cardinality
+            if best != i:
+                var current = factored[i]
+                factored[i] = factored[best]
+                factored[best] = current
+                changed = True
+        if not changed:
+            return root_index
+        var options = StaticTuple[Int, MAX_BRANCHES]()
+        for i in range(len(factored)):
+            options[i] = factored[i]
+        var child_index = self.add(OrNode(options, len(factored)))
+        return self.add(
+            RepeatNode(
+                child_index,
+                repeat.minimum,
+                repeat.maximum,
+                repeat.greedy,
+            )
+        )
 
     def parse_or(mut self) raises -> Int:
         var options = List[Int]()

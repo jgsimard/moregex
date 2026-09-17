@@ -4,6 +4,7 @@ from ._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
+    CaptureNode,
     CharClassNode,
     EmptyNode,
     LiteralNode,
@@ -42,6 +43,10 @@ def _semantic_fixed_width(
         ) else 1
     if node.isa[BracketClassNode]():
         return 1
+    if node.isa[CaptureNode]():
+        return _semantic_fixed_width(
+            nodes, node[CaptureNode].child, assertions_are_zero_width
+        )
     if node.isa[OrNode]():
         ref alternation = node[OrNode]
         if alternation.count == 0:
@@ -95,6 +100,8 @@ def _semantic_maximum_width(nodes: List[RegexNode], node_index: Int) -> Int:
         ) else 1
     if node.isa[BracketClassNode]():
         return 1
+    if node.isa[CaptureNode]():
+        return _semantic_maximum_width(nodes, node[CaptureNode].child)
     if node.isa[OrNode]():
         ref alternation = node[OrNode]
         var width = 0

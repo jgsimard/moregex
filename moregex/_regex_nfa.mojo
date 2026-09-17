@@ -68,6 +68,13 @@ struct _NFACaptureMatch[capture_count: Int](ImplicitlyCopyable):
     var ends: StaticTuple[Int, Self.capture_count + 1]
 
 
+@fieldwise_init
+struct _NFACaptureParticipation(ImplicitlyCopyable, TrivialRegisterPassable):
+    var start: Int
+    var end: Int
+    var groups: UInt64
+
+
 def _emit_instruction(
     mut program: List[_NFAInstruction],
     kind: Int,
@@ -451,6 +458,181 @@ def _capture_match_result[
         starts[group + 1] = slots[2 * group]
         ends[group + 1] = slots[2 * group + 1]
     return _NFACaptureMatch(starts, ends)
+
+
+@always_inline
+def _add_ordered_capture_mask_closure[
+    state_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+](
+    text: ImmStringSpan,
+    position: Int,
+    initial: Int,
+    thread_start: Int,
+    initial_groups: UInt64,
+    mut states: StaticTuple[Int, state_count],
+    mut starts: StaticTuple[Int, state_count],
+    mut groups: StaticTuple[UInt64, state_count],
+    mut count: Int,
+    mut seen: StaticTuple[Int, state_count],
+    generation: Int,
+):
+    """Append an ordered closure carrying only capture participation."""
+    var stack = StaticTuple[Int, 2 * state_count]()
+    var stack_groups = StaticTuple[UInt64, 2 * state_count]()
+    var stack_count = 1
+    stack[0] = initial
+    stack_groups[0] = initial_groups
+
+    while stack_count > 0:
+        stack_count -= 1
+        var pc = stack[stack_count]
+        if seen[pc] == generation:
+            continue
+        seen[pc] = generation
+        var thread_groups = stack_groups[stack_count]
+        var instruction = program[pc]
+        if instruction.kind == _NFA_SPLIT:
+            stack[stack_count] = instruction.out2
+            stack_groups[stack_count] = thread_groups
+            stack_count += 1
+            stack[stack_count] = instruction.out1
+            stack_groups[stack_count] = thread_groups
+            stack_count += 1
+        elif instruction.kind == _NFA_ASSERT:
+            if _runtime_assertion_matches(instruction.arg, text, position):
+                stack[stack_count] = instruction.out1
+                stack_groups[stack_count] = thread_groups
+                stack_count += 1
+        elif (
+            instruction.kind == _NFA_CAPTURE_START
+            or instruction.kind == _NFA_CAPTURE_END
+        ):
+            thread_groups |= UInt64(1) << UInt64(instruction.arg - 1)
+            stack[stack_count] = instruction.out1
+            stack_groups[stack_count] = thread_groups
+            stack_count += 1
+        else:
+            states[count] = pc
+            starts[count] = thread_start
+            groups[count] = thread_groups
+            count += 1
+
+
+@always_inline
+def _nfa_ordered_capture_participation[
+    state_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+    start_pc: Int,
+    unanchored: Bool,
+](text: ImmStringSpan, search_start: Int) -> Optional[_NFACaptureParticipation]:
+    """Return a prioritized match with a bit for each participating group."""
+    var current = StaticTuple[Int, state_count]()
+    var current_starts = StaticTuple[Int, state_count]()
+    var current_groups = StaticTuple[UInt64, state_count]()
+    var following = StaticTuple[Int, state_count]()
+    var following_starts = StaticTuple[Int, state_count]()
+    var following_groups = StaticTuple[UInt64, state_count]()
+    var seen = StaticTuple[Int, state_count]()
+    for i in range(state_count):
+        seen[i] = 0
+
+    var current_count = 0
+    var generation = 1
+    _add_ordered_capture_mask_closure[state_count, program](
+        text,
+        search_start,
+        start_pc,
+        search_start,
+        0,
+        current,
+        current_starts,
+        current_groups,
+        current_count,
+        seen,
+        generation,
+    )
+
+    var candidate_start = -1
+    var candidate_end = -1
+    var candidate_groups = UInt64(0)
+    var position = search_start
+    while True:
+        var match_index = -1
+        for i in range(current_count):
+            if program[current[i]].kind == _NFA_MATCH:
+                match_index = i
+                break
+        if match_index >= 0:
+            candidate_start = current_starts[match_index]
+            candidate_end = position
+            candidate_groups = current_groups[match_index]
+            current_count = match_index
+            if current_count == 0:
+                return _NFACaptureParticipation(
+                    candidate_start, candidate_end, candidate_groups
+                )
+
+        if position >= text.byte_length():
+            if candidate_start >= 0:
+                return _NFACaptureParticipation(
+                    candidate_start, candidate_end, candidate_groups
+                )
+            return None
+
+        generation += 1
+        var following_count = 0
+        var value = Int(text.as_bytes()[position])
+        for i in range(current_count):
+            var pc = current[i]
+            if _instruction_accepts[state_count, program](pc, value):
+                _add_ordered_capture_mask_closure[state_count, program](
+                    text,
+                    position + 1,
+                    program[pc].out1,
+                    current_starts[i],
+                    current_groups[i],
+                    following,
+                    following_starts,
+                    following_groups,
+                    following_count,
+                    seen,
+                    generation,
+                )
+        comptime if unanchored:
+            if candidate_start < 0:
+                _add_ordered_capture_mask_closure[state_count, program](
+                    text,
+                    position + 1,
+                    start_pc,
+                    position + 1,
+                    0,
+                    following,
+                    following_starts,
+                    following_groups,
+                    following_count,
+                    seen,
+                    generation,
+                )
+
+        if following_count == 0:
+            if candidate_start >= 0:
+                return _NFACaptureParticipation(
+                    candidate_start, candidate_end, candidate_groups
+                )
+            comptime if not unanchored:
+                return None
+        var temporary = current
+        current = following
+        following = temporary
+        var temporary_starts = current_starts
+        current_starts = following_starts
+        following_starts = temporary_starts
+        var temporary_groups = current_groups
+        current_groups = following_groups
+        following_groups = temporary_groups
+        current_count = following_count
+        position += 1
 
 
 @always_inline
@@ -979,6 +1161,21 @@ def _nfa_find_from[
 
 
 @always_inline
+def _nfa_match_at[
+    regex: Regex
+](text: ImmStringSpan, start: Int) -> Optional[_NFAMatch]:
+    """Try the ordered NFA at one exact byte offset."""
+    comptime compiled = _compile_program(regex.nodes, regex.root)
+    comptime program_list = compiled[0]
+    comptime start_pc = compiled[1]
+    comptime state_count = len(program_list)
+    comptime program = _materialize_program[program_list, state_count]()
+    return _nfa_ordered_match[state_count, program, start_pc, False](
+        text, start
+    )
+
+
+@always_inline
 def _nfa_find_captures[
     regex: Regex
 ](text: ImmStringSpan, search_start: Int) -> Optional[
@@ -996,6 +1193,43 @@ def _nfa_find_captures[
     return _nfa_ordered_capture_match[
         state_count, regex.capture_count, program, start_pc, unanchored
     ](text, search_start)
+
+
+@always_inline
+def _nfa_find_capture_participation[
+    regex: Regex
+](text: ImmStringSpan, search_start: Int) -> Optional[_NFACaptureParticipation]:
+    """Return the next match and its capture participation bit mask."""
+    comptime compiled = _compile_program(
+        regex.capture_nodes, regex.capture_root
+    )
+    comptime program_list = compiled[0]
+    comptime start_pc = compiled[1]
+    comptime state_count = len(program_list)
+    comptime program = _materialize_program[program_list, state_count]()
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
+    return _nfa_ordered_capture_participation[
+        state_count, program, start_pc, unanchored
+    ](text, search_start)
+
+
+@always_inline
+def _nfa_match_captures_at[
+    regex: Regex
+](text: ImmStringSpan, start: Int) -> Optional[
+    _NFACaptureMatch[regex.capture_count]
+]:
+    """Try a capture match at one exact byte offset."""
+    comptime compiled = _compile_program(
+        regex.capture_nodes, regex.capture_root
+    )
+    comptime program_list = compiled[0]
+    comptime start_pc = compiled[1]
+    comptime state_count = len(program_list)
+    comptime program = _materialize_program[program_list, state_count]()
+    return _nfa_ordered_capture_match[
+        state_count, regex.capture_count, program, start_pc, False
+    ](text, start)
 
 
 @always_inline

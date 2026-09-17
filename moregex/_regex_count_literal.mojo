@@ -127,6 +127,34 @@ def _count_unique_anchor_literal[
     var pointer = text.unsafe_ptr()
     comptime widths = [CLASS_SIMD_WIDTH, CLASS_TAIL_SIMD_WIDTH]
     comptime for width in widths:
+        while offset + 2 * width <= candidate_count:
+            var first_values = pointer.unsafe_load[width=width, alignment=1](
+                offset + anchor_offset
+            )
+            var second_values = pointer.unsafe_load[width=width, alignment=1](
+                offset + width + anchor_offset
+            )
+            var first_pending = pack_bits(
+                first_values.eq(SIMD[.uint8, width](anchor))
+            )
+            var second_pending = pack_bits(
+                second_values.eq(SIMD[.uint8, width](anchor))
+            )
+            while first_pending != 0:
+                var lane = Int(count_trailing_zeros(first_pending))
+                first_pending &= first_pending - 1
+                var start = offset + lane
+                if start >= next_start and _match_literal[value](text, start):
+                    total += _match_checksum[sum_spans](literal_length)
+                    next_start = start + literal_length
+            while second_pending != 0:
+                var lane = Int(count_trailing_zeros(second_pending))
+                second_pending &= second_pending - 1
+                var start = offset + width + lane
+                if start >= next_start and _match_literal[value](text, start):
+                    total += _match_checksum[sum_spans](literal_length)
+                    next_start = start + literal_length
+            offset += 2 * width
         while offset + width <= candidate_count:
             var values = pointer.unsafe_load[width=width, alignment=1](
                 offset + anchor_offset

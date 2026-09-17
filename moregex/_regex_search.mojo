@@ -313,6 +313,55 @@ def _search_prefixed_infix[
     )
 
 
+@always_inline
+def _grep_prefixed_infix[
+    nodes: List[RegexNode], root: RegexNode
+](text: String) -> Int:
+    """Count matching lines by scanning the mandatory infix globally."""
+    comptime sequence = root[SequenceNode]
+    comptime literal = nodes[sequence.items[1]][LiteralNode]
+    comptime literal_length = literal.value.byte_length()
+    var length = text.byte_length()
+    if length == 0:
+        return 0
+
+    var total = 0
+    var line_start = 0
+    var line_end = text.find("\n")
+    if line_end < 0:
+        line_end = length
+    var search_start = 0
+    while search_start < length:
+        var delimiter = text.find(literal.value, search_start)
+        if delimiter < 0:
+            break
+        while delimiter >= line_end and line_end < length:
+            line_start = line_end + 1
+            line_end = text.find("\n", line_start)
+            if line_end < 0:
+                line_end = length
+
+        var content_end = line_end
+        if (
+            content_end > line_start
+            and Int(text.as_bytes()[content_end - 1]) == 13
+        ):
+            content_end -= 1
+        if (
+            delimiter + literal_length < content_end
+            and _prefixed_infix_matches_at[nodes, root](
+                text[byte=line_start:content_end], delimiter - line_start
+            )
+        ):
+            total += 1
+            if line_end == length:
+                break
+            search_start = line_end + 1
+        else:
+            search_start = delimiter + 1
+    return total
+
+
 def _all_infix_options[nodes: List[RegexNode], alternation: OrNode]() -> Bool:
     comptime for i in range(alternation.count):
         comptime node = nodes[alternation.options[i]]

@@ -12,6 +12,7 @@ from ._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
+    CaptureNode,
     CharClassNode,
     EmptyNode,
     LiteralNode,
@@ -34,6 +35,253 @@ from ._regex_common import (
     _class_mask,
 )
 from ._regex_semantics import _semantic_fixed_width, _semantic_maximum_width
+from ._syntax import Regex
+
+
+@fieldwise_init
+struct _LinePrefixRunLiteralPlan(Copyable):
+    var repeat_index: Int
+    var literal_index: Int
+
+
+@fieldwise_init
+struct _AnchoredLazyLiteralPlan(Copyable):
+    var prefix_repeat_index: Int
+    var prefix_literal_index: Int
+    var search_literal_index: Int
+    var suffix_item: Int
+
+
+def _anchored_lazy_literal_plan[
+    nodes: List[RegexNode], node_index: Int
+]() -> Optional[_AnchoredLazyLiteralPlan]:
+    """Recognize `^class*LITERAL.*?LITERAL...` on bounded line spans."""
+    comptime node = nodes[node_index]
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count >= 5:
+            comptime prefix_node = nodes[sequence.items[1]]
+            comptime prefix_literal_node = nodes[sequence.items[2]]
+            comptime lazy_node = nodes[sequence.items[3]]
+            comptime search_literal_node = nodes[sequence.items[4]]
+            comptime if (
+                _is_start_assertion_node[nodes, sequence.items[0]]()
+                and prefix_node.isa[RepeatNode]()
+                and prefix_literal_node.isa[LiteralNode]()
+                and lazy_node.isa[RepeatNode]()
+                and search_literal_node.isa[LiteralNode]()
+            ):
+                comptime prefix = prefix_node[RepeatNode]
+                comptime prefix_literal = prefix_literal_node[LiteralNode]
+                comptime lazy = lazy_node[RepeatNode]
+                comptime lazy_child = nodes[lazy.child]
+                comptime search_literal = search_literal_node[LiteralNode]
+                comptime if (
+                    prefix.minimum == 0
+                    and prefix.maximum == -1
+                    and _is_one_byte_class_node[nodes, prefix.child]()
+                    and prefix_literal.value.byte_length() > 0
+                    and not _node_start_accepts[nodes, prefix.child](
+                        Int(prefix_literal.value.as_bytes()[0])
+                    )
+                    and lazy.minimum == 0
+                    and lazy.maximum == -1
+                    and not lazy.greedy
+                    and lazy_child.isa[CharClassNode]()
+                    and (
+                        lazy_child[CharClassNode].kind == CHAR_BYTE_DOT
+                        or lazy_child[CharClassNode].kind == CHAR_UNICODE_DOT
+                    )
+                    and search_literal.value.byte_length() > 0
+                ):
+                    return _AnchoredLazyLiteralPlan(
+                        sequence.items[1],
+                        sequence.items[2],
+                        sequence.items[4],
+                        5,
+                    )
+    return None
+
+
+def _line_prefix_run_literal_plan[
+    nodes: List[RegexNode], node_index: Int
+]() -> Optional[_LinePrefixRunLiteralPlan]:
+    """Recognize `^class*LITERAL.*` for line-oriented execution."""
+    comptime node = nodes[node_index]
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count == 4:
+            comptime prefix_node = nodes[sequence.items[1]]
+            comptime literal_node = nodes[sequence.items[2]]
+            comptime tail_node = nodes[sequence.items[3]]
+            comptime if (
+                _is_start_assertion_node[nodes, sequence.items[0]]()
+                and prefix_node.isa[RepeatNode]()
+                and literal_node.isa[LiteralNode]()
+                and tail_node.isa[RepeatNode]()
+            ):
+                comptime prefix = prefix_node[RepeatNode]
+                comptime literal = literal_node[LiteralNode]
+                comptime tail = tail_node[RepeatNode]
+                comptime tail_child = nodes[tail.child]
+                comptime if (
+                    prefix.minimum == 0
+                    and prefix.maximum == -1
+                    and literal.value.byte_length() > 0
+                    and not _node_start_accepts[nodes, prefix.child](
+                        Int(literal.value.as_bytes()[0])
+                    )
+                    and tail.minimum == 0
+                    and tail.maximum == -1
+                    and tail_child.isa[CharClassNode]()
+                    and (
+                        tail_child[CharClassNode].kind == CHAR_BYTE_DOT
+                        or tail_child[CharClassNode].kind == CHAR_UNICODE_DOT
+                    )
+                ):
+                    return _LinePrefixRunLiteralPlan(
+                        sequence.items[1], sequence.items[2]
+                    )
+    return None
+
+
+def _sequence_mandatory_capture_mask[
+    nodes: List[RegexNode], sequence: SequenceNode, item: Int
+]() -> Int:
+    comptime if item == sequence.count:
+        return 0
+    return _mandatory_capture_mask[nodes, sequence.items[item]]() | (
+        _sequence_mandatory_capture_mask[nodes, sequence, item + 1]()
+    )
+
+
+def _alternation_mandatory_capture_mask[
+    nodes: List[RegexNode], alternation: OrNode
+]() -> Int:
+    comptime if alternation.count == 0:
+        return 0
+    var required = _mandatory_capture_mask[nodes, alternation.options[0]]()
+    comptime for option in range(1, alternation.count):
+        required &= _mandatory_capture_mask[
+            nodes, alternation.options[option]
+        ]()
+    return required
+
+
+def _mandatory_capture_mask[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return capture groups participating in every match of an AST node."""
+    comptime node = nodes[node_index]
+    comptime if node.isa[CaptureNode]():
+        comptime capture = node[CaptureNode]
+        return (Int(1) << (capture.index - 1)) | _mandatory_capture_mask[
+            nodes, capture.child
+        ]()
+    elif node.isa[SequenceNode]():
+        return _sequence_mandatory_capture_mask[nodes, node[SequenceNode], 0]()
+    elif node.isa[OrNode]():
+        return _alternation_mandatory_capture_mask[nodes, node[OrNode]]()
+    elif node.isa[RepeatNode]():
+        comptime repeat = node[RepeatNode]
+        comptime if repeat.minimum > 0:
+            return _mandatory_capture_mask[nodes, repeat.child]()
+        return 0
+    return 0
+
+
+def _all_captures_mandatory[regex: Regex]() -> Bool:
+    """Return whether every numbered group participates in every match."""
+    comptime if regex.capture_count == 0:
+        return True
+    comptime expected = (Int(1) << regex.capture_count) - 1
+    return (
+        _mandatory_capture_mask[regex.capture_nodes, regex.capture_root]()
+        == expected
+    )
+
+
+def _constant_capture_participation_sequence[
+    nodes: List[RegexNode], sequence: SequenceNode, item: Int
+]() -> Int:
+    """Return the participating capture count, or -1 when it can vary."""
+    comptime if item == sequence.count:
+        return 0
+    else:
+        comptime head = _constant_capture_participation[
+            nodes, sequence.items[item]
+        ]()
+        comptime tail = _constant_capture_participation_sequence[
+            nodes, sequence, item + 1
+        ]()
+        comptime if head < 0 or tail < 0:
+            return -1
+        return head + tail
+
+
+def _constant_capture_participation_alternation[
+    nodes: List[RegexNode], alternation: OrNode
+]() -> Int:
+    """Return a common alternative capture count, or -1 when it varies."""
+    comptime if alternation.count == 0:
+        return 0
+    else:
+        comptime expected = _constant_capture_participation[
+            nodes, alternation.options[0]
+        ]()
+        comptime if expected < 0:
+            return -1
+        comptime for option in range(1, alternation.count):
+            comptime actual = _constant_capture_participation[
+                nodes, alternation.options[option]
+            ]()
+            comptime if actual != expected:
+                return -1
+        return expected
+
+
+def _constant_capture_participation[
+    nodes: List[RegexNode], node_index: Int
+]() -> Int:
+    """Return captures participating in every match, independent of identity.
+
+    A negative result means that the count can vary. A repeated branch with
+    captures is conservative: different iterations may populate different
+    groups even when each iteration has the same capture count.
+    """
+    comptime node = nodes[node_index]
+    comptime if node.isa[CaptureNode]():
+        comptime child = _constant_capture_participation[
+            nodes, node[CaptureNode].child
+        ]()
+        comptime if child < 0:
+            return -1
+        return child + 1
+    elif node.isa[SequenceNode]():
+        return _constant_capture_participation_sequence[
+            nodes, node[SequenceNode], 0
+        ]()
+    elif node.isa[OrNode]():
+        return _constant_capture_participation_alternation[
+            nodes, node[OrNode]
+        ]()
+    elif node.isa[RepeatNode]():
+        comptime repeat = node[RepeatNode]
+        comptime child = _constant_capture_participation[nodes, repeat.child]()
+        comptime if repeat.maximum == 0 or child == 0:
+            return 0
+        comptime if repeat.minimum == 0 or repeat.maximum != 1 or child < 0:
+            return -1
+        return child
+    return 0
+
+
+def _constant_capture_count[regex: Regex]() -> Int:
+    """Return the fixed participating-group count including group zero."""
+    comptime captures = _constant_capture_participation[
+        regex.capture_nodes, regex.capture_root
+    ]()
+    comptime if captures < 0:
+        return -1
+    return captures + 1
 
 
 def _all_literal_options[
@@ -522,6 +770,95 @@ def _all_prefixed_sequence_options[
             comptime if prefix.value.byte_length() < minimum:
                 return False
     return alternation.count > 0
+
+
+def _is_bounded_line_gap_option[
+    nodes: List[RegexNode], node_index: Int
+]() -> Bool:
+    """Recognize `literal(?:\\s*.+\\s*){0,n}literal`."""
+    comptime node = nodes[node_index]
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count != 3:
+            return False
+        comptime prefix = nodes[sequence.items[0]]
+        comptime gap_node = nodes[sequence.items[1]]
+        comptime suffix = nodes[sequence.items[2]]
+        comptime if (
+            not prefix.isa[LiteralNode]()
+            or prefix[LiteralNode].value.byte_length() == 0
+            or not suffix.isa[LiteralNode]()
+            or suffix[LiteralNode].value.byte_length() == 0
+        ):
+            return False
+        comptime if gap_node.isa[RepeatNode]():
+            comptime gap = gap_node[RepeatNode]
+            comptime if (
+                gap.minimum != 0 or gap.maximum <= 0 or not gap.greedy
+            ):
+                return False
+            comptime child = nodes[gap.child]
+            comptime if child.isa[SequenceNode]():
+                comptime middle = child[SequenceNode]
+                comptime if middle.count != 3:
+                    return False
+                comptime leading_node = nodes[middle.items[0]]
+                comptime dot_node = nodes[middle.items[1]]
+                comptime trailing_node = nodes[middle.items[2]]
+                comptime if (
+                    not leading_node.isa[RepeatNode]()
+                    or not dot_node.isa[RepeatNode]()
+                    or not trailing_node.isa[RepeatNode]()
+                ):
+                    return False
+                comptime leading = leading_node[RepeatNode]
+                comptime dot = dot_node[RepeatNode]
+                comptime trailing = trailing_node[RepeatNode]
+                comptime if (
+                    leading.minimum != 0
+                    or leading.maximum != -1
+                    or not leading.greedy
+                    or dot.minimum != 1
+                    or dot.maximum != -1
+                    or not dot.greedy
+                    or trailing.minimum != 0
+                    or trailing.maximum != -1
+                    or not trailing.greedy
+                ):
+                    return False
+                comptime leading_child = nodes[leading.child]
+                comptime dot_child = nodes[dot.child]
+                comptime trailing_child = nodes[trailing.child]
+                return (
+                    leading_child.isa[CharClassNode]()
+                    and leading_child[CharClassNode].kind
+                    == CHAR_ASCII_WHITESPACE
+                    and dot_child.isa[CharClassNode]()
+                    and dot_child[CharClassNode].kind == CHAR_BYTE_DOT
+                    and trailing_child.isa[CharClassNode]()
+                    and trailing_child[CharClassNode].kind
+                    == CHAR_ASCII_WHITESPACE
+                )
+            return False
+        return False
+    return False
+
+
+def _is_bounded_line_gap_literal_alternation[
+    nodes: List[RegexNode], node_index: Int
+]() -> Bool:
+    comptime node = nodes[node_index]
+    comptime if node.isa[OrNode]():
+        comptime alternation = node[OrNode]
+        comptime if alternation.count == 0:
+            return False
+        comptime for option in range(alternation.count):
+            comptime if not _is_bounded_line_gap_option[
+                nodes, alternation.options[option]
+            ]():
+                return False
+        return True
+    return False
 
 
 def _multiline_literal_edge_index[
@@ -1246,6 +1583,76 @@ def _is_multiline_whole_line[nodes: List[RegexNode], node_index: Int]() -> Bool:
     return False
 
 
+def _is_anchored_prefix_delimited_line_at[
+    nodes: List[RegexNode], node_index: Int, offset: Int
+]() -> Bool:
+    comptime sequence = nodes[node_index][SequenceNode]
+    comptime start = nodes[sequence.items[0]]
+    comptime prefix_node = nodes[sequence.items[1 + offset]]
+    comptime body_node = nodes[sequence.items[3 + offset]]
+    comptime end = nodes[sequence.items[5 + offset]]
+    comptime if (
+        not start.isa[ZeroWidthNode]()
+        or start[ZeroWidthNode].kind != ASSERT_INPUT_START
+        or not prefix_node.isa[RepeatNode]()
+        or not body_node.isa[RepeatNode]()
+        or not end.isa[ZeroWidthNode]()
+        or end[ZeroWidthNode].kind != ASSERT_INPUT_END
+    ):
+        return False
+    else:
+        comptime prefix = prefix_node[RepeatNode]
+        comptime body = body_node[RepeatNode]
+        comptime body_child = nodes[body.child]
+        return (
+            prefix.minimum == 0
+            and prefix.maximum < 0
+            and prefix.greedy
+            and _is_one_byte_class_node[nodes, prefix.child]()
+            and _is_one_byte_class_node[nodes, sequence.items[2 + offset]]()
+            and _is_one_byte_class_node[nodes, sequence.items[4 + offset]]()
+            and _nodes_are_disjoint[
+                nodes, prefix.child, sequence.items[2 + offset]
+            ]()
+            and body.minimum == 0
+            and body.maximum < 0
+            and body.greedy
+            and body_child.isa[CharClassNode]()
+            and (
+                body_child[CharClassNode].kind == CHAR_BYTE_DOT
+                or body_child[CharClassNode].kind == CHAR_UNICODE_DOT
+            )
+        )
+
+
+def _anchored_prefix_delimited_line_offset[
+    nodes: List[RegexNode], node_index: Int
+]() -> Int:
+    comptime node = nodes[node_index]
+    comptime if not node.isa[SequenceNode]():
+        return -1
+    else:
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count == 6:
+            return 0 if _is_anchored_prefix_delimited_line_at[
+                nodes, node_index, 0
+            ]() else -1
+        elif (
+            sequence.count == 7 and nodes[sequence.items[1]].isa[EmptyNode]()
+        ):
+            return 1 if _is_anchored_prefix_delimited_line_at[
+                nodes, node_index, 1
+            ]() else -1
+        return -1
+
+
+def _is_anchored_prefix_delimited_line[
+    nodes: List[RegexNode], node_index: Int
+]() -> Bool:
+    """Recognize `^ prefix* open dot* close $` for grep line scans."""
+    return _anchored_prefix_delimited_line_offset[nodes, node_index]() >= 0
+
+
 def _is_adjacent_dot_stars_around_literal[
     nodes: List[RegexNode], node_index: Int
 ]() -> Bool:
@@ -1741,6 +2148,8 @@ struct _FixedPrefilterPlan(Copyable):
     var first: Int
     var second: Int
     var third: Int
+    var fourth: Int
+    var fifth: Int
 
 
 def _fixed_node_contains_alternation[
@@ -1764,16 +2173,24 @@ def _fixed_node_contains_alternation[
 def _fixed_prefilter_plan[
     nodes: List[RegexNode], node_index: Int, match_width: Int
 ]() -> _FixedPrefilterPlan:
-    """Choose the three narrowest byte predicates in a fixed expression."""
+    """Choose the five narrowest byte predicates in a fixed expression."""
     var first = 0
     var second = -1
     var third = -1
+    var fourth = -1
+    var fifth = -1
     var first_coverage = 257
     var second_coverage = 257
     var third_coverage = 257
+    var fourth_coverage = 257
+    var fifth_coverage = 257
     comptime for offset in range(match_width):
         comptime coverage = _fixed_offset_coverage[nodes, node_index, offset]()
         if coverage < first_coverage:
+            fifth = fourth
+            fifth_coverage = fourth_coverage
+            fourth = third
+            fourth_coverage = third_coverage
             third = second
             third_coverage = second_coverage
             second = first
@@ -1781,14 +2198,27 @@ def _fixed_prefilter_plan[
             first = offset
             first_coverage = coverage
         elif coverage < second_coverage:
+            fifth = fourth
+            fifth_coverage = fourth_coverage
+            fourth = third
+            fourth_coverage = third_coverage
             third = second
             third_coverage = second_coverage
             second = offset
             second_coverage = coverage
         elif coverage < third_coverage:
+            fifth = fourth
+            fifth_coverage = fourth_coverage
+            fourth = third
+            fourth_coverage = third_coverage
             third = offset
             third_coverage = coverage
-    comptime if _fixed_node_contains_alternation[nodes, node_index]():
-        second = -1
-        third = -1
-    return _FixedPrefilterPlan(first, second, third)
+        elif coverage < fourth_coverage:
+            fifth = fourth
+            fifth_coverage = fourth_coverage
+            fourth = offset
+            fourth_coverage = coverage
+        elif coverage < fifth_coverage:
+            fifth = offset
+            fifth_coverage = coverage
+    return _FixedPrefilterPlan(first, second, third, fourth, fifth)

@@ -5,8 +5,8 @@ from std.utils import StaticTuple, Variant
 
 comptime MAX_BRANCHES = 64
 comptime MAX_SEQUENCE_ITEMS = 32
-comptime MAX_CLASS_RANGES = 16
-comptime MAX_CAPTURE_GROUPS = 16
+comptime MAX_CLASS_RANGES = 32
+comptime MAX_CAPTURE_GROUPS = 32
 
 comptime CHAR_BYTE_DOT = 0
 comptime CHAR_ASCII_WORD = 1

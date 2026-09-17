@@ -1,6 +1,6 @@
-from std.testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from moregex import Regex, matches
+from moregex import Regex, count, count_spans, finditer, matches
 
 
 def test_wildcards_and_classes() raises:
@@ -71,6 +71,53 @@ def test_continuation_backtracking() raises:
     assert_true(matches[repeated_alternative]("ab"))
     comptime nested_giveback = Regex("(a+)*ab")
     assert_true(matches[nested_giveback]("aaab"))
+
+
+def test_factored_utf8_byte_class_repetition() raises:
+    comptime unbounded = Regex(
+        "(?:[A-Z]|[\\xC3][\\x80-\\x96]|[\\xC3][\\x98-\\xB6])+",
+        unicode=True,
+    )
+    assert_equal(count[unbounded]("AÀÖØö!"), 1)
+    assert_equal(count_spans[unbounded]("AÀÖØö!"), 9)
+
+    comptime bounded = Regex(
+        "(?:[A-Z]|[\\xC3][\\x80-\\x96]|[\\xC3][\\x98-\\xB6]){2,3}",
+        unicode=True,
+    )
+    assert_equal(count[bounded]("AÀÖØö!"), 2)
+
+    comptime infix = Regex(
+        (
+            "(?:[A-Za-z]|[\\xC3][\\x80-\\xB6])+herloc"
+            "(?:[A-Za-z]|[\\xC3][\\x80-\\xB6])+|"
+            "(?:[A-Za-z]|[\\xC3][\\x80-\\xB6])+olme"
+            "(?:[A-Za-z]|[\\xC3][\\x80-\\xB6])+"
+        ),
+        unicode=True,
+    )
+    assert_equal(count_spans[infix]("Holmes and Sherlock"), 14)
+
+    comptime exact_sequence = Regex(
+        (
+            "(?:[A-Z]|[\\xC3][\\x80-\\x96]){2}[ ]"
+            "(?:[A-Z]|[\\xC3][\\x80-\\x96]){1}[ ]"
+            "(?:[A-Z]|[\\xC3][\\x80-\\x96]){2}"
+        ),
+        unicode=True,
+    )
+    assert_equal(count[exact_sequence]("AÀ B ÖZ! XX Y ZZ"), 2)
+    assert_equal(count_spans[exact_sequence]("AÀ B ÖZ! XX Y ZZ"), 16)
+
+
+def test_bounded_line_gap_normalization() raises:
+    comptime gap = Regex("A(?:\\s*.+\\s*){0,2}B|B(?:\\s*.+\\s*){0,2}A")
+    var text = "A one\n two B / A one\n two\n three B / B same A"
+    var expected = 0
+    var found = finditer[gap](text)
+    for item in found:
+        expected += item.end() - item.start()
+    assert_equal(count_spans[gap](text), expected)
 
 
 def main() raises:

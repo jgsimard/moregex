@@ -33,7 +33,10 @@ from ._regex_common import (
 )
 
 from ._regex_analysis import (
+    _AnchoredLazyLiteralPlan,
+    _LinePrefixRunLiteralPlan,
     _TwoDelimiterBracketRunsPlan,
+    _anchored_prefix_delimited_line_offset,
     _all_prefixed_sequence_options,
     _bounded_repeat_byte_accepts,
     _bracket_mask,
@@ -42,6 +45,7 @@ from ._regex_analysis import (
     _fixed_offset_mask,
     _fixed_prefilter_plan,
     _is_end_assertion_node,
+    _is_bounded_line_gap_literal_alternation,
     _is_exact_bracket_range,
     _is_one_byte_class_node,
     _is_symmetric_bounded_delimited_sequence,
@@ -57,6 +61,7 @@ from ._regex_matcher import (
     _match_sequence_from,
     _match_node,
 )
+from ._regex_nfa import _nfa_match_at
 
 
 from ._regex_literals import (
@@ -65,6 +70,121 @@ from ._regex_literals import (
     _literal_alternation_candidate_mask,
     _literal_alternation_match_length_at,
 )
+
+
+@always_inline
+def _count_anchored_prefix_delimited_lines[
+    regex: Regex
+](text: ImmStringSpan) -> Int:
+    """Count grep lines matching an AST-normalized prefix/delimiter shape."""
+    comptime sequence = regex.nodes[regex.root][SequenceNode]
+    comptime item_offset = _anchored_prefix_delimited_line_offset[
+        regex.nodes, regex.root
+    ]()
+    comptime prefix = regex.nodes[sequence.items[1 + item_offset]][RepeatNode]
+    var bytes = text.as_bytes()
+    var length = text.byte_length()
+    var total = 0
+    var line_start = 0
+    while line_start < length:
+        var newline = text.find("\n", line_start)
+        var line_end = length if newline < 0 else newline
+        if line_end > line_start and Int(bytes[line_end - 1]) == ord("\r"):
+            line_end -= 1
+        var position = line_start
+        while position < line_end and _node_start_accepts[
+            regex.nodes, prefix.child
+        ](Int(bytes[position])):
+            position += 1
+        if position < line_end and _node_start_accepts[
+            regex.nodes, sequence.items[2 + item_offset]
+        ](Int(bytes[position])):
+            position += 1
+            if position < line_end and _node_start_accepts[
+                regex.nodes, sequence.items[4 + item_offset]
+            ](Int(bytes[line_end - 1])):
+                total += 1
+        if newline < 0:
+            break
+        line_start = newline + 1
+    return total
+
+
+@always_inline
+def _count_anchored_lazy_literal_lines[
+    regex: Regex, plan: _AnchoredLazyLiteralPlan
+](text: ImmStringSpan) -> Int:
+    """Count anchored lines using the literal after a lazy dot as the anchor."""
+    comptime sequence = regex.nodes[regex.root][SequenceNode]
+    comptime prefix_literal = regex.nodes[plan.prefix_literal_index][
+        LiteralNode
+    ]
+    comptime search_literal = regex.nodes[plan.search_literal_index][
+        LiteralNode
+    ]
+    var total = 0
+    var line_start = 0
+    var length = text.byte_length()
+    while line_start < length:
+        var newline = text.find("\n", line_start)
+        var line_end = newline
+        if newline < 0:
+            line_end = length
+        if line_end > line_start and Int(text.as_bytes()[line_end - 1]) == 13:
+            line_end -= 1
+        var line = text[byte=line_start:line_end]
+        var prefix = _match_node[regex.nodes, plan.prefix_repeat_index](line, 0)
+        var prefix_end = prefix.unsafe_value().consumed()
+        if _match_literal[prefix_literal.value](line, prefix_end):
+            var candidate = line.find(
+                search_literal.value,
+                prefix_end + prefix_literal.value.byte_length(),
+            )
+            while candidate >= 0:
+                var suffix = _match_sequence_from[
+                    regex.nodes, sequence, plan.suffix_item
+                ](
+                    line,
+                    candidate + search_literal.value.byte_length(),
+                )
+                if suffix:
+                    total += 1
+                    break
+                candidate = line.find(search_literal.value, candidate + 1)
+        if newline < 0:
+            break
+        line_start = newline + 1
+    return total
+
+
+@always_inline
+def _count_line_prefix_run_literal[
+    regex: Regex, plan: _LinePrefixRunLiteralPlan
+](text: ImmStringSpan) -> Int:
+    """Count lines matching a deterministic anchored run/literal prefix."""
+    comptime literal = regex.nodes[plan.literal_index][LiteralNode]
+    var total = 0
+    var line_start = 0
+    var length = text.byte_length()
+    while line_start < length:
+        var newline = text.find("\n", line_start)
+        var line_end = newline
+        if newline < 0:
+            line_end = length
+        if line_end > line_start and Int(text.as_bytes()[line_end - 1]) == 13:
+            line_end -= 1
+        var line = text[byte=line_start:line_end]
+        var prefix = _match_node[regex.nodes, plan.repeat_index](line, 0)
+        var position = prefix.unsafe_value().consumed()
+        if (
+            position + literal.value.byte_length() <= line.byte_length()
+            and _match_literal[literal.value](line, position)
+        ):
+            total += 1
+        if newline < 0:
+            break
+        line_start = newline + 1
+    return total
 
 
 @always_inline
@@ -793,6 +913,11 @@ def _count_reverse_suffix_class[
 
 
 @always_inline
+def _use_full_fixed_alternation_mask[regex: Regex, match_width: Int]() -> Bool:
+    return match_width <= 8
+
+
+@always_inline
 def _count_fixed_width_prefiltered[
     regex: Regex, match_width: Int, sum_spans: Bool
 ](text: ImmStringSpan) -> Int:
@@ -805,25 +930,45 @@ def _count_fixed_width_prefiltered[
     var next_start = 0
     var offset = 0
     while offset + CLASS_SIMD_WIDTH + match_width - 1 <= length:
-        var candidates = _fixed_offset_mask[
-            regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.first
-        ](text, offset)
-        comptime if plan.second >= 0:
-            candidates &= _fixed_offset_mask[
-                regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.second
+        comptime full_mask = _use_full_fixed_alternation_mask[
+            regex, match_width
+        ]()
+        var candidates: SIMD[.bool, CLASS_SIMD_WIDTH]
+        comptime if full_mask:
+            candidates = _fixed_node_mask[
+                regex.nodes, regex.root, CLASS_SIMD_WIDTH, 0
             ](text, offset)
-        comptime if plan.third >= 0:
-            candidates &= _fixed_offset_mask[
-                regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.third
+        else:
+            candidates = _fixed_offset_mask[
+                regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.first
             ](text, offset)
+            comptime if plan.second >= 0:
+                candidates &= _fixed_offset_mask[
+                    regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.second
+                ](text, offset)
+            comptime if plan.third >= 0:
+                candidates &= _fixed_offset_mask[
+                    regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.third
+                ](text, offset)
+            comptime if plan.fourth >= 0:
+                candidates &= _fixed_offset_mask[
+                    regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.fourth
+                ](text, offset)
+            comptime if plan.fifth >= 0:
+                candidates &= _fixed_offset_mask[
+                    regex.nodes, regex.root, CLASS_SIMD_WIDTH, plan.fifth
+                ](text, offset)
         var pending = pack_bits(candidates)
         while pending != 0:
             var lane = Int(count_trailing_zeros(pending))
             pending &= pending - 1
             var start = offset + lane
-            if start >= next_start and all(
-                _fixed_node_mask[regex.nodes, regex.root, 1, 0](text, start)
-            ):
+            var matched = start >= next_start
+            comptime if not full_mask:
+                matched = matched and all(
+                    _fixed_node_mask[regex.nodes, regex.root, 1, 0](text, start)
+                )
+            if matched:
                 total += _match_checksum[sum_spans](match_width)
                 next_start = start + match_width
         offset += CLASS_SIMD_WIDTH
@@ -861,6 +1006,14 @@ def _search_fixed_width_prefiltered[
         comptime if plan.third >= 0:
             candidates &= _fixed_offset_mask[
                 regex.nodes, regex.root, width, plan.third
+            ](text, block_start)
+        comptime if plan.fourth >= 0:
+            candidates &= _fixed_offset_mask[
+                regex.nodes, regex.root, width, plan.fourth
+            ](text, block_start)
+        comptime if plan.fifth >= 0:
+            candidates &= _fixed_offset_mask[
+                regex.nodes, regex.root, width, plan.fifth
             ](text, block_start)
         var pending = pack_bits(candidates)
         while pending != 0:
@@ -1503,8 +1656,91 @@ def _count_bracket_prefixed_sequence[
 
 
 @always_inline
+def _bounded_line_gap_alternation_match_length[
+    regex: Regex
+](text: ImmStringSpan, start: Int) -> Int:
+    """Match a normalized bounded content-line gap from one literal prefix."""
+    comptime alternation = regex.nodes[regex.root][OrNode]
+    comptime for option in range(alternation.count):
+        comptime sequence = regex.nodes[alternation.options[option]][
+            SequenceNode
+        ]
+        comptime prefix = regex.nodes[sequence.items[0]][LiteralNode]
+        if not _match_literal[prefix.value](text, start):
+            continue
+        comptime gap = regex.nodes[sequence.items[1]][RepeatNode]
+        comptime suffix = regex.nodes[sequence.items[2]][LiteralNode]
+        var position = start + prefix.value.byte_length()
+        var content_lines = 0
+        var limit = text.byte_length()
+        var bytes = text.as_bytes()
+        var line_start = position
+        while line_start < text.byte_length():
+            var newline = text.find("\n", line_start)
+            var line_end = text.byte_length() if newline < 0 else newline
+            var content = line_start
+            while content < line_end and _accepts_class[CHAR_ASCII_WHITESPACE](
+                Int(bytes[content])
+            ):
+                content += 1
+            if content < line_end:
+                if content_lines >= gap.maximum:
+                    # The suffix is tested before the dot-repeat attempts to
+                    # consume this first byte, so include this position.
+                    limit = content
+                    break
+                content_lines += 1
+            if newline < 0:
+                break
+            line_start = newline + 1
+
+        var candidate = text.find(suffix.value, position)
+        var best_end = -1
+        while candidate >= 0 and candidate <= limit:
+            best_end = candidate + suffix.value.byte_length()
+            candidate = text.find(suffix.value, candidate + 1)
+        if best_end >= 0:
+            return best_end - start
+    return -1
+
+
+@always_inline
+def _prefixed_alternation_match_length[
+    regex: Regex, use_nfa: Bool = False
+](text: ImmStringSpan, start: Int) -> Int:
+    comptime if _is_bounded_line_gap_literal_alternation[
+        regex.nodes, regex.root
+    ]():
+        return _bounded_line_gap_alternation_match_length[regex](text, start)
+    comptime if use_nfa:
+        var result = _nfa_match_at[regex](text, start)
+        return result.unsafe_value().consumed if result else -1
+    else:
+        var result = _match_node[regex.nodes, regex.root](text, start)
+        return result.unsafe_value().consumed() if result else -1
+
+
+@always_inline
+def _prefixed_alternation_literal_matches_at[
+    nodes: List[RegexNode], alternation: OrNode
+](text: ImmStringSpan, start: Int) -> Bool:
+    """Confirm a complete mandatory branch prefix at a SIMD candidate."""
+    comptime for option in range(alternation.count):
+        comptime prefix_index = _sequence_prefix_literal_index[
+            nodes, alternation.options[option]
+        ]()
+        comptime prefix = nodes[prefix_index][LiteralNode]
+        if _match_literal[prefix.value](text, start):
+            return True
+    return False
+
+
+@always_inline
 def _count_prefixed_alternation_simd[
-    regex: Regex, alternation: OrNode, sum_spans: Bool
+    regex: Regex,
+    alternation: OrNode,
+    sum_spans: Bool,
+    use_nfa: Bool = False,
 ](text: ImmStringSpan) -> Int:
     """Scan correlated literal-prefix bytes once for every branch."""
     var length = text.byte_length()
@@ -1532,9 +1768,15 @@ def _count_prefixed_alternation_simd[
             pending &= pending - 1
             var start = block_start + lane
             if start >= next_start:
-                var result = _match_node[regex.nodes, regex.root](text, start)
-                if result:
-                    var consumed = result.unsafe_value().consumed()
+                comptime if use_nfa:
+                    if not _prefixed_alternation_literal_matches_at[
+                        regex.nodes, alternation
+                    ](text, start):
+                        continue
+                var consumed = _prefixed_alternation_match_length[
+                    regex, use_nfa
+                ](text, start)
+                if consumed >= 0:
                     total += _match_checksum[sum_spans](consumed)
                     next_start = start + max(1, consumed)
         return False
@@ -1554,9 +1796,16 @@ def _count_prefixed_alternation_simd[
                 and bytes[offset + 2] == prefix.as_bytes()[2]
             )
         if offset >= next_start and candidate:
-            var result = _match_node[regex.nodes, regex.root](text, offset)
-            if result:
-                var consumed = result.unsafe_value().consumed()
+            comptime if use_nfa:
+                if not _prefixed_alternation_literal_matches_at[
+                    regex.nodes, alternation
+                ](text, offset):
+                    offset += 1
+                    continue
+            var consumed = _prefixed_alternation_match_length[regex, use_nfa](
+                text, offset
+            )
+            if consumed >= 0:
                 total += _match_checksum[sum_spans](consumed)
                 next_start = offset + max(1, consumed)
         offset += 1
@@ -1591,9 +1840,10 @@ def _count_prefixed_alternation[
                 candidate = candidates[i]
         if candidate < 0:
             break
-        var result = _match_node[regex.nodes, regex.root](text, candidate)
-        if result:
-            var consumed = result.unsafe_value().consumed()
+        var consumed = _prefixed_alternation_match_length[regex](
+            text, candidate
+        )
+        if consumed >= 0:
             total += _match_checksum[sum_spans](consumed)
             search_start = candidate + max(1, consumed)
         else:

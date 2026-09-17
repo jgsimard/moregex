@@ -130,6 +130,38 @@ def _alternation_two_position_mask[
 
 
 @always_inline
+def _alternation_three_position_mask[
+    nodes: List[RegexNode],
+    alternation: OrNode,
+    first_position: Int,
+    second_position: Int,
+    third_position: Int,
+    width: Int,
+](
+    first_values: SIMD[.uint8, width],
+    second_values: SIMD[.uint8, width],
+    third_values: SIMD[.uint8, width],
+) -> SIMD[.bool, width]:
+    var matched = SIMD[.bool, width](fill=False)
+    comptime for i in range(alternation.count):
+        comptime first = _alternation_byte[
+            nodes, alternation, first_position, False, False, i
+        ]()
+        comptime second = _alternation_byte[
+            nodes, alternation, second_position, False, False, i
+        ]()
+        comptime third = _alternation_byte[
+            nodes, alternation, third_position, False, False, i
+        ]()
+        matched |= (
+            first_values.eq(first)
+            & second_values.eq(second)
+            & third_values.eq(third)
+        )
+    return matched
+
+
+@always_inline
 def _literal_alternation_three_byte_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](
@@ -293,10 +325,7 @@ def _literal_alternation_candidate_mask[
     comptime if (
         width == 64
         and 4 <= alternation.count <= 8
-        and (
-            first_byte < 0x80
-            or not _literal_alternation_same_first_byte[nodes, alternation]()
-        )
+        and first_byte < 0x80
         and _all_literal_options[nodes, alternation, 3]()
         and CompilationTarget.is_x86()
         and CompilationTarget.has_avx512f()
@@ -310,6 +339,38 @@ def _literal_alternation_candidate_mask[
         return _alternation_teddy3_mask[nodes, alternation, False, width](
             first_values, second_values, third_values
         )
+    elif (
+        alternation.count >= 4
+        and first_byte >= 0x80
+        and not _literal_alternation_same_first_byte[nodes, alternation]()
+        and _all_literal_options[nodes, alternation, 8]()
+    ):
+        var second_values = text.unsafe_ptr().unsafe_load[
+            width=width, alignment=1
+        ](offset + 1)
+        var eighth_values = text.unsafe_ptr().unsafe_load[
+            width=width, alignment=1
+        ](offset + 7)
+        comptime if (
+            width == 64
+            and alternation.count <= 8
+            and CompilationTarget.is_x86()
+            and CompilationTarget.has_avx512f()
+        ):
+            var pattern_bits = _alternation_teddy_position_bits[
+                nodes, alternation, 0, False, width
+            ](first_values)
+            pattern_bits &= _alternation_teddy_position_bits[
+                nodes, alternation, 1, False, width
+            ](second_values)
+            pattern_bits &= _alternation_teddy_position_bits[
+                nodes, alternation, 7, False, width
+            ](eighth_values)
+            return pattern_bits.ne(0)
+        else:
+            return _alternation_three_position_mask[
+                nodes, alternation, 0, 1, 7, width
+            ](first_values, second_values, eighth_values)
     elif (
         alternation.count >= 4
         and first_byte >= 0x80

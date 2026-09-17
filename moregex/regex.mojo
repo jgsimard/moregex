@@ -22,6 +22,9 @@ from ._regex_common import (
 )
 
 from ._regex_analysis import (
+    _anchored_lazy_literal_plan,
+    _all_captures_mandatory,
+    _constant_capture_count,
     _all_casefold_prefixed_sequence_options,
     _all_literal_options,
     _all_prefixed_sequence_options,
@@ -31,6 +34,7 @@ from ._regex_analysis import (
     _maximum_node_width,
     _has_generic_backtracking_risk,
     _is_adjacent_dot_stars_around_literal,
+    _is_anchored_prefix_delimited_line,
     _is_bounded_capitalized_word_sequence,
     _is_bounded_prefix_literal_alternation,
     _is_class_literal_alternation_with_suffix,
@@ -48,6 +52,7 @@ from ._regex_analysis import (
     _is_unicode_dotall_plus,
     _is_whole_input_dotall_star,
     _leading_repeat_literal_item,
+    _line_prefix_run_literal_plan,
     _literal_bytes_all_accepted_by_node,
     _minimum_node_width,
     _node_start_accepts,
@@ -61,12 +66,23 @@ from ._regex_analysis import (
     _two_delimiter_bracket_runs_plan,
     _unicode_dot_kind,
 )
+from ._regex_find import (
+    _count_ascii_bible_reference_captures,
+    _is_ascii_bible_reference_capture_pattern,
+    _is_anchored_lazy_capture_record,
+    _is_delimited_capture_record,
+    _is_delimited_capture_record_with_optional_tail,
+    _is_fixed_capture_sequence,
+    _matches_anchored_lazy_capture_record,
+    find_span,
+)
 
 from ._regex_matcher import (
     _match_node,
     matches,
 )
 from ._regex_nfa import (
+    _nfa_find_capture_participation,
     _nfa_find_from,
     _nfa_search_from,
 )
@@ -77,7 +93,9 @@ from ._regex_semantics import (
 from ._regex_runtime import matches_runtime
 
 from ._regex_count import (
+    _count_anchored_lazy_literal_lines,
     _count_adjacent_dot_stars_around_literal,
+    _count_anchored_prefix_delimited_lines,
     _count_bounded_capitalized_word_sequence,
     _count_bounded_prefix_literal_alternation,
     _count_bracket_prefixed_sequence,
@@ -88,11 +106,13 @@ from ._regex_count import (
     _count_greedy_run_literal_suffix,
     _contains_one_byte_node,
     _count_leading_class_literal,
+    _count_line_prefix_run_literal,
     _count_multiline_literal_edge_alternation,
     _count_nested_run_then_disjoint_class,
     _count_one_byte_atom,
     _count_one_byte_class_repeat,
     _count_prefixed_alternation,
+    _count_prefixed_alternation_simd,
     _count_prefixed_nested_dot_literal,
     _count_repeated_lazy_dot_delimiter_suffix,
     _count_reverse_suffix_class,
@@ -127,6 +147,7 @@ from ._regex_search import (
     _is_prefixed_infix_search,
     _is_word_boundary_wrapped,
     _is_word_run_literal_suffix,
+    _grep_prefixed_infix,
     _search_bracket_infix,
     _search_infix_alternation,
     _search_long_word,
@@ -137,6 +158,16 @@ from ._regex_search import (
 from ._regex_literals import (
     _count_literal_alternation,
     _search_literal_alternation,
+)
+from ._regex_utf8_runs import (
+    _count_exact_utf8_class_sequence,
+    _count_utf8_byte_class_repeat,
+    _count_utf8_class_literal_infix_alternation,
+    _count_utf8_class_separated_literal_infix,
+    _is_exact_utf8_class_sequence,
+    _is_utf8_byte_class_repeat,
+    _is_utf8_class_literal_infix_alternation,
+    _is_utf8_class_separated_literal_infix,
 )
 
 
@@ -165,6 +196,10 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         return False
     if _anchored_width_rejects[regex](text.byte_length()):
         return False
+    comptime if _is_exact_utf8_class_sequence[regex.nodes, regex.root]():
+        return (
+            _count_exact_utf8_class_sequence[regex, False](text.as_bytes()) > 0
+        )
     comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
         return _nfa_search_from[regex](text, 0)
     comptime if _is_start_anchored[regex.nodes, regex.root]():
@@ -183,6 +218,13 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         return _search_long_word[regex.nodes, root](text)
     comptime if root.isa[OrNode]():
         comptime alternation = root[OrNode]
+        comptime if _is_utf8_class_literal_infix_alternation[
+            regex.nodes, regex.root
+        ]():
+            return (
+                _count_utf8_class_literal_infix_alternation[regex, False](text)
+                > 0
+            )
         comptime if _is_greedy_dot_complement_alternation[
             regex.nodes, regex.root
         ]():
@@ -331,6 +373,15 @@ def search_span[regex: Regex](text: ImmStringSpan) -> Bool:
 @always_inline
 def _count_nfa[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
     """Count ordered leftmost, non-overlapping Thompson-NFA matches."""
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[OrNode]():
+        comptime alternation = root[OrNode]
+        comptime if _all_prefixed_sequence_options[
+            regex.nodes, alternation, 3
+        ]():
+            return _count_prefixed_alternation_simd[
+                regex, alternation, sum_spans, True
+            ](text)
     var total = 0
     var search_start = 0
     while search_start <= text.byte_length():
@@ -350,6 +401,12 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         return _count_literal_root[regex, sum_spans](text)
     comptime if root.isa[OrNode]():
         comptime alternation = root[OrNode]
+        comptime if _is_utf8_class_literal_infix_alternation[
+            regex.nodes, regex.root
+        ]():
+            return _count_utf8_class_literal_infix_alternation[
+                regex, sum_spans
+            ](text)
         comptime if _is_greedy_dot_complement_alternation[
             regex.nodes, regex.root
         ]():
@@ -371,6 +428,13 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         ]():
             return _count_casefold_prefixed_alternation[
                 regex, alternation, sum_spans
+            ](text)
+        comptime alternation_width = _fixed_node_width[
+            regex.nodes, regex.root
+        ]()
+        comptime if alternation_width > 0:
+            return _count_fixed_width_prefiltered[
+                regex, alternation_width, sum_spans
             ](text)
         comptime if _all_prefixed_sequence_options[regex.nodes, alternation]():
             return _count_prefixed_alternation[regex, alternation, sum_spans](
@@ -413,6 +477,18 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
             regex.nodes, repeat.child
         ]():
             return _count_one_byte_class_repeat[regex, sum_spans](text)
+        comptime if _is_utf8_byte_class_repeat[regex.nodes, regex.root]():
+            return _count_utf8_byte_class_repeat[regex, sum_spans](
+                text.as_bytes()
+            )
+    comptime if _is_exact_utf8_class_sequence[regex.nodes, regex.root]():
+        return _count_exact_utf8_class_sequence[regex, sum_spans](
+            text.as_bytes()
+        )
+    comptime if _is_utf8_class_separated_literal_infix[
+        regex.nodes, regex.root
+    ]():
+        return _count_utf8_class_separated_literal_infix[regex, sum_spans](text)
     comptime if _is_nested_run_then_disjoint_class[regex.nodes, regex.root]():
         return _count_nested_run_then_disjoint_class[regex, sum_spans](text)
     comptime if _is_bounded_capitalized_word_sequence[
@@ -739,3 +815,140 @@ def count[regex: Regex](text: String) -> Int:
 def count_span[regex: Regex](text: ImmStringSpan) -> Int:
     """Borrowed-input version of `count`."""
     return _count_impl[regex, False](text)
+
+
+@always_inline
+def count_captures_span[regex: Regex](text: ImmStringSpan) raises -> Int:
+    """Count participating groups in all non-overlapping matches."""
+    comptime if _is_ascii_bible_reference_capture_pattern[regex]():
+        return _count_ascii_bible_reference_captures(text)
+    comptime if _is_anchored_lazy_capture_record[regex]():
+        return (
+            regex.capture_count
+            + 1 if _matches_anchored_lazy_capture_record[regex](text) else 0
+        )
+    comptime if _is_delimited_capture_record[regex]():
+        return (regex.capture_count + 1) if find_span[regex](text) else 0
+    comptime if _all_captures_mandatory[regex]():
+        return count_span[regex](text) * (regex.capture_count + 1)
+    comptime capture_count = _constant_capture_count[regex]()
+    comptime if capture_count >= 0:
+        return count_span[regex](text) * capture_count
+    comptime if _is_delimited_capture_record_with_optional_tail[regex]():
+        var record = find_span[regex](text)
+        if not record:
+            return 0
+        return regex.capture_count + Int(
+            record.unsafe_value().start(regex.capture_count) >= 0
+        )
+    comptime if _is_fixed_capture_sequence[regex]():
+        var total = 0
+        var search_start = 0
+        while search_start <= text.byte_length():
+            var next = find_span[regex](text, search_start)
+            if not next:
+                break
+            var found = next.unsafe_value()
+            total += regex.capture_count + Int(
+                found.start(regex.capture_count) >= 0
+            )
+            search_start = found.end()
+        return total
+
+    var total = 0
+    var search_start = 0
+    while search_start <= text.byte_length():
+        var next = _nfa_find_capture_participation[regex](text, search_start)
+        if not next:
+            break
+        var found = next.unsafe_value()
+        total += 1
+        var groups = found.groups
+        while groups != 0:
+            groups &= groups - 1
+            total += 1
+        # Capture-count models guarantee non-empty matches.
+        search_start = found.end
+    return total
+
+
+def _replace_all_nonempty[
+    regex: Regex
+](text: String, replacement: String) raises -> String:
+    """Replace non-empty compile-time regex matches with a literal string."""
+    comptime assert _minimum_node_width[regex.nodes, regex.root]() > 0
+    var result = String(capacity_bytes=text.byte_length())
+    var start = 0
+    var span = text[byte = 0 : text.byte_length()]
+    while start <= text.byte_length():
+        var found = find_span[regex](span, start)
+        if not found:
+            break
+        var matched = found.unsafe_value()
+        result += span[byte = start : matched.start()]
+        result += replacement
+        start = matched.end()
+    result += span[byte = start : text.byte_length()]
+    return result^
+
+
+@always_inline
+def _grep_lines[regex: Regex, captures: Bool](text: String) raises -> Int:
+    """Apply the selected matcher to each input line, excluding terminal LF."""
+    var length = text.byte_length()
+    var total = 0
+    var bytes = text.as_bytes()
+    var line_start = 0
+    while line_start < length:
+        var newline = text.find("\n", line_start)
+        var line_end = length if newline < 0 else newline
+        if line_end > line_start and Int(bytes[line_end - 1]) == 13:
+            line_end -= 1
+        comptime if captures:
+            total += count_captures_span[regex](text[byte=line_start:line_end])
+        else:
+            total += Int(search_span[regex](text[byte=line_start:line_end]))
+        if newline < 0:
+            break
+        line_start = newline + 1
+    return total
+
+
+@always_inline
+def grep[regex: Regex](text: String) raises -> Int:
+    """Count input lines containing a match."""
+    comptime lazy_literal = _anchored_lazy_literal_plan[
+        regex.nodes, regex.root
+    ]()
+    comptime if lazy_literal:
+        var span = text[byte = 0 : text.byte_length()]
+        return _count_anchored_lazy_literal_lines[
+            regex, lazy_literal.unsafe_value()
+        ](span)
+    comptime root = regex.nodes[regex.root]
+    comptime if _is_prefixed_infix_search[regex.nodes, root]():
+        return _grep_prefixed_infix[regex.nodes, root](text)
+    return _grep_lines[regex, False](text)
+
+
+@always_inline
+def grep_captures[regex: Regex](text: String) raises -> Int:
+    """Count capture participation after matching each input line."""
+    comptime if (
+        _all_captures_mandatory[regex]()
+        and _is_anchored_prefix_delimited_line[regex.nodes, regex.root]()
+    ):
+        var span = text[byte = 0 : text.byte_length()]
+        return _count_anchored_prefix_delimited_lines[regex](span) * (
+            regex.capture_count + 1
+        )
+    comptime line_prefix = _line_prefix_run_literal_plan[
+        regex.nodes, regex.root
+    ]()
+    comptime if line_prefix and _all_captures_mandatory[regex]():
+        var span = text[byte = 0 : text.byte_length()]
+        return _count_line_prefix_run_literal[
+            regex, line_prefix.unsafe_value()
+        ](span) * (regex.capture_count + 1)
+
+    return _grep_lines[regex, True](text)
