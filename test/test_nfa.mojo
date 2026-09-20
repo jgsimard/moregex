@@ -79,6 +79,7 @@ def test_ordered_nfa_execution() raises:
     # continuation fails, while retaining branch and quantifier priority.
     comptime reconsider = Regex("(a|aa)c")
     assert_nfa_full[reconsider]("aac", True)
+    assert_public_search[reconsider]("zzaac", True)
     assert_nfa_find[reconsider]("ac", 0, 2)
     assert_nfa_full[reconsider]("ac", True)
     assert_nfa_find[reconsider]("zzaac!", 2, 3)
@@ -100,6 +101,13 @@ def test_ordered_nfa_execution() raises:
     comptime ordered_long = Regex("aa|a")
     assert_nfa_find[ordered_long]("aa", 0, 2)
 
+    # Boolean full matching can discard priority while retaining assertion and
+    # end-of-input semantics.
+    comptime shared_prefix = Regex("^(?:apple|application|apply):[0-9]+$")
+    assert_nfa_full[shared_prefix]("application:12345", True)
+    assert_nfa_full[shared_prefix]("applenotvalid:12345", False)
+    assert_nfa_full[shared_prefix]("apple:12345\n", False)
+
 
 def test_unicode_nfa_execution() raises:
     # Unicode dot lowers to disjoint 1-4-byte Thompson branches and therefore
@@ -119,6 +127,36 @@ def test_public_hybrid_nfa_search() raises:
     comptime repeated_suffix = Regex("(?:ab|cd)+!")
     assert_public_search[repeated_suffix]("ab" * 128, False)
     assert_public_search[repeated_suffix]("xx" + "ab" * 8 + "!", True)
+
+    # Semantic-risk searches with an exact leading literal should preserve
+    # ordered behavior while skipping directly to possible match starts.
+    comptime lazy_delimited = Regex("<<tag.*?>>")
+    assert_public_search[lazy_delimited]("x" * 256, False)
+    assert_public_search[lazy_delimited]("x" * 256 + "<<tag value>>", True)
+    assert_public_search[lazy_delimited]("<<tag\nvalue>>", False)
+    assert_public_search[lazy_delimited](
+        "<<tag\n" + "x" * 256 + "<<tag value>>", True
+    )
+    assert_public_search[lazy_delimited]("<<tag bad\n<<tag good>>", True)
+
+    # A dense leading prefix must retain the linear fallback after one probe.
+    comptime dense_prefix = Regex("a.*?b")
+    assert_public_search[dense_prefix]("a" * 1024, False)
+    assert_public_search[dense_prefix]("a" * 1024 + "b", True)
+
+    comptime dotall_delimited = Regex("(?s)<block>.*?</block>")
+    assert_public_search[dotall_delimited]("x" * 256, False)
+    assert_public_search[dotall_delimited](
+        "x" * 256 + "<block>line 1\nline 2</block>", True
+    )
+    assert_public_search[dotall_delimited]("<block>unterminated", False)
+
+
+def test_large_literal_alternation_search() raises:
+    comptime alternatives = Regex("foo|bar|baz|qux|quux|corge|grault|garply")
+    assert_public_search[alternatives]("x" * 1024, False)
+    assert_public_search[alternatives]("x" * 1024 + "garply", True)
+    assert_public_search[alternatives]("x" * 63 + "grault", True)
 
 
 def main() raises:

@@ -26,6 +26,25 @@ from ._regex_analysis import (
 )
 
 
+def _literal_alternation_first_masks[
+    nodes: List[RegexNode], alternation: OrNode
+]() -> StaticTuple[UInt64, 4]:
+    """Build a compact lookup set for all literal-leading bytes."""
+    var masks = StaticTuple[UInt64, 4]()
+    comptime for option in range(alternation.count):
+        comptime literal = nodes[alternation.options[option]][LiteralNode]
+        comptime first = Int(literal.value.as_bytes()[0])
+        masks[first // 64] |= UInt64(1) << UInt64(first % 64)
+    return masks
+
+
+@always_inline
+def _literal_alternation_first_accepts[
+    masks: StaticTuple[UInt64, 4]
+](value: Int) -> Bool:
+    return masks[value // 64] & (UInt64(1) << UInt64(value % 64)) != 0
+
+
 @always_inline
 def _literal_alternation_matches_at[
     nodes: List[RegexNode], alternation: OrNode
@@ -70,6 +89,28 @@ def _literal_alternation_block_matches[
         comptime first = literal.value.as_bytes()[0]
         var branch = first_values.eq(first)
         if any(branch):
+            comptime for position in range(1, literal.value.byte_length()):
+                var values = pointer.unsafe_load[width=width, alignment=1](
+                    offset + position
+                )
+                comptime expected = literal.value.as_bytes()[position]
+                branch &= values.eq(expected)
+            if any(branch):
+                return True
+    return False
+
+
+@always_inline
+def _literal_alternation_uniform_block_matches[
+    nodes: List[RegexNode], alternation: OrNode, width: Int
+](text: ImmStringSpan, offset: Int, value: UInt8) -> Bool:
+    """Check only alternatives that can start in a uniform-byte block."""
+    var pointer = text.unsafe_ptr()
+    comptime for i in range(alternation.count):
+        comptime literal = nodes[alternation.options[i]][LiteralNode]
+        comptime first = literal.value.as_bytes()[0]
+        if value == first:
+            var branch = SIMD[.bool, width](fill=True)
             comptime for position in range(1, literal.value.byte_length()):
                 var values = pointer.unsafe_load[width=width, alignment=1](
                     offset + position
@@ -505,6 +546,9 @@ def _count_literal_alternation[
     var next_start = 0
     var offset = 0
     var pointer = text.unsafe_ptr()
+    comptime first_masks = _literal_alternation_first_masks[
+        nodes, alternation
+    ]()
     while offset + CLASS_SIMD_WIDTH <= length:
         if not _literal_alternation_block_fits[
             nodes, alternation, CLASS_SIMD_WIDTH
@@ -531,7 +575,9 @@ def _count_literal_alternation[
         offset += CLASS_SIMD_WIDTH
 
     while offset < length:
-        if offset >= next_start:
+        if offset >= next_start and _literal_alternation_first_accepts[
+            first_masks
+        ](Int(text.as_bytes()[offset])):
             var match_length = _literal_alternation_match_length_at[
                 nodes, alternation
             ](text, offset)
@@ -551,10 +597,45 @@ def _search_literal_alternation[
     var length = text.byte_length()
     var pointer = text.unsafe_ptr()
     var offset = 0
+    comptime first_masks = _literal_alternation_first_masks[
+        nodes, alternation
+    ]()
     while offset + CLASS_SIMD_WIDTH <= length:
         var values = pointer.unsafe_load[width=CLASS_SIMD_WIDTH, alignment=1](
             offset
         )
+        if _literal_alternation_block_fits[
+            nodes, alternation, CLASS_SIMD_WIDTH
+        ](length, offset):
+            var first_value = values[0]
+            if all(values.eq(SIMD[.uint8, CLASS_SIMD_WIDTH](first_value))):
+                if _literal_alternation_uniform_block_matches[
+                    nodes, alternation, CLASS_SIMD_WIDTH
+                ](text, offset, first_value):
+                    return True
+                offset += CLASS_SIMD_WIDTH
+                continue
+        comptime if alternation.count >= 5:
+            if _literal_alternation_block_fits[
+                nodes, alternation, CLASS_SIMD_WIDTH
+            ](length, offset):
+                # Large alternations already have a correlated multi-byte
+                # candidate filter for counting. Reuse it here so common
+                # first bytes do not trigger full vector comparisons for
+                # every branch in every block.
+                var filtered = _literal_alternation_candidate_mask[
+                    nodes, alternation, CLASS_SIMD_WIDTH
+                ](text, offset, values)
+                var pending = pack_bits(filtered)
+                while pending != 0:
+                    var lane = Int(count_trailing_zeros(pending))
+                    pending &= pending - 1
+                    if _literal_alternation_matches_at[nodes, alternation](
+                        text, offset + lane
+                    ):
+                        return True
+                offset += CLASS_SIMD_WIDTH
+                continue
         var candidates = SIMD[.bool, CLASS_SIMD_WIDTH](fill=False)
         comptime for i in range(alternation.count):
             comptime literal = nodes[alternation.options[i]][LiteralNode]
@@ -581,7 +662,9 @@ def _search_literal_alternation[
             offset += CLASS_SIMD_WIDTH
 
     while offset < length:
-        if _literal_alternation_matches_at[nodes, alternation](text, offset):
+        if _literal_alternation_first_accepts[first_masks](
+            Int(text.as_bytes()[offset])
+        ) and _literal_alternation_matches_at[nodes, alternation](text, offset):
             return True
         offset += 1
     return False

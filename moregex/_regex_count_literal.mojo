@@ -12,6 +12,39 @@ from ._regex_common import (
 
 
 @always_inline
+def _search_static_literal[pattern: StaticString](text: ImmStringSpan) -> Bool:
+    """SIMD-scan sparse first-byte candidates for a static literal."""
+    comptime literal_length = pattern.byte_length()
+    if text.byte_length() < literal_length:
+        return False
+    if text.byte_length() < 2 * CLASS_SIMD_WIDTH:
+        return text.find(pattern) >= 0
+    comptime first = pattern.as_bytes()[0]
+    var candidate_count = text.byte_length() - literal_length + 1
+    var offset = 0
+    var pointer = text.unsafe_ptr()
+    while offset + CLASS_SIMD_WIDTH <= candidate_count:
+        var values = pointer.unsafe_load[width=CLASS_SIMD_WIDTH, alignment=1](
+            offset
+        )
+        var pending = pack_bits(
+            values.eq(SIMD[.uint8, CLASS_SIMD_WIDTH](first))
+        )
+        var checked = 0
+        while pending != 0 and checked < 8:
+            var lane = Int(count_trailing_zeros(pending))
+            pending &= pending - 1
+            if _match_literal[pattern](text, offset + lane):
+                return True
+            checked += 1
+        if pending != 0:
+            # Dense candidates favor the standard substring implementation.
+            return text.find(pattern, offset) >= 0
+        offset += CLASS_SIMD_WIDTH
+    return text.find(pattern, offset) >= 0
+
+
+@always_inline
 def _count_static_literal[
     pattern: StaticString, sum_spans: Bool
 ](text: ImmStringSpan) -> Int:

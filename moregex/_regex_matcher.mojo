@@ -41,6 +41,25 @@ def _match_sequence_from[
     else:
         comptime child_index = sequence.items[item]
         comptime child = nodes[child_index]
+        comptime if child.isa[OrNode]():
+            comptime alternation = child[OrNode]
+            comptime for option in range(alternation.count):
+                var alternative = _match_node[
+                    nodes, alternation.options[option]
+                ](text, start)
+                if alternative:
+                    var alternative_length = (
+                        alternative.unsafe_value().consumed()
+                    )
+                    var suffix = _match_sequence_from[
+                        nodes, sequence, item + 1
+                    ](text, start + alternative_length)
+                    if suffix:
+                        return _MatchResult(
+                            alternative_length
+                            + suffix.unsafe_value().consumed()
+                        )
+            return None
         comptime if child.isa[RepeatNode]():
             comptime repeat = child[RepeatNode]
             comptime child_width = _fixed_node_width[nodes, repeat.child]()

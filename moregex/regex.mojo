@@ -68,12 +68,14 @@ from ._regex_analysis import (
 )
 from ._regex_find import (
     _count_ascii_bible_reference_captures,
+    _has_leading_literal_prefilter,
     _is_ascii_bible_reference_capture_pattern,
     _is_anchored_lazy_capture_record,
     _is_delimited_capture_record,
     _is_delimited_capture_record_with_optional_tail,
     _is_fixed_capture_sequence,
     _matches_anchored_lazy_capture_record,
+    _prefilter_start,
     find_span,
 )
 
@@ -84,6 +86,7 @@ from ._regex_matcher import (
 from ._regex_nfa import (
     _nfa_find_capture_participation,
     _nfa_find_from,
+    _nfa_match_at,
     _nfa_search_from,
 )
 from ._regex_semantics import (
@@ -133,6 +136,7 @@ from ._regex_count_literal import (
     _count_unique_anchor_literal,
     _literal_has_unique_first_byte,
     _literal_unique_high_byte_offset,
+    _search_static_literal,
 )
 from ._regex_search import (
     _all_infix_options,
@@ -142,6 +146,7 @@ from ._regex_search import (
     _count_word_run_literal_suffix,
     _is_bracket_infix_search,
     _is_long_word_search,
+    _is_literal_dot_infix,
     _is_mariomka_ipv4,
     _is_numeric_date_search,
     _is_prefixed_infix_search,
@@ -150,10 +155,12 @@ from ._regex_search import (
     _grep_prefixed_infix,
     _search_bracket_infix,
     _search_infix_alternation,
+    _search_literal_dot_infix,
     _search_long_word,
     _search_numeric_date,
     _search_prefixed_infix,
     _search_word_boundary_wrapped,
+    _word_boundary_inner_index,
 )
 from ._regex_literals import (
     _count_literal_alternation,
@@ -186,6 +193,8 @@ def _anchored_width_rejects[regex: Regex](length: Int) -> Bool:
 def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
+        comptime if _static_source_is_root_literal[regex]():
+            return _search_static_literal[regex.source](text)
         return text.find(root[LiteralNode].value) >= 0
     comptime minimum_width = _minimum_node_width[regex.nodes, regex.root]()
     comptime selective_start = (
@@ -200,7 +209,25 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         return (
             _count_exact_utf8_class_sequence[regex, False](text.as_bytes()) > 0
         )
+    comptime if _is_literal_dot_infix[regex.nodes, root]():
+        return _search_literal_dot_infix[regex.nodes, root](text)
     comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
+        # An exact leading literal identifies complete match starts. Avoid
+        # keeping an unanchored NFA active at every byte when those starts are
+        # sparse; run the ordered automaton only at literal candidates.
+        comptime if (
+            not _is_start_anchored[regex.nodes, regex.root]()
+            and _has_leading_literal_prefilter[regex]()
+        ):
+            var candidate = _prefilter_start[regex](text, 0)
+            if candidate < 0:
+                return False
+            if _nfa_match_at[regex](text, candidate):
+                return True
+            # Repeated anchored attempts can become quadratic when the prefix
+            # is dense. The first candidate is now disproven, so resume the
+            # linear unanchored executor immediately after it.
+            return _nfa_search_from[regex](text, candidate + 1)
         return _nfa_search_from[regex](text, 0)
     comptime if _is_start_anchored[regex.nodes, regex.root]():
         return Bool(_match_node[regex.nodes, regex.root](text, 0))
@@ -351,7 +378,7 @@ def _search_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
     comptime if root.isa[LiteralNode]():
         comptime literal = root[LiteralNode]
         comptime if _static_source_is_root_literal[regex]():
-            return text.find(regex.source) >= 0
+            return _search_static_literal[regex.source](text)
         return text.find(literal.value) >= 0
     comptime if _is_prefixed_infix_search[regex.nodes, root]():
         return _search_prefixed_infix[regex.nodes, root](text)
@@ -499,6 +526,19 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         return _count_long_word[regex, sum_spans](text)
     comptime if _is_word_run_literal_suffix[regex.nodes, root]():
         return _count_word_run_literal_suffix[regex, sum_spans](text)
+    comptime if _is_word_boundary_wrapped[regex.nodes, root]():
+        comptime boundary_inner = _word_boundary_inner_index[
+            regex.nodes, root
+        ]()
+        comptime boundary_child = regex.nodes[boundary_inner]
+        comptime if boundary_child.isa[OrNode]():
+            comptime boundary_alternation = boundary_child[OrNode]
+            comptime if _all_casefold_prefixed_sequence_options[
+                regex.nodes, boundary_alternation
+            ]():
+                return _count_casefold_prefixed_alternation[
+                    regex, boundary_alternation, sum_spans, True
+                ](text)
     # Treat word boundaries as a generic candidate source for any wrapped
     # expression; test only actual boundary positions instead of every byte.
     comptime if _is_word_boundary_wrapped[regex.nodes, root]():

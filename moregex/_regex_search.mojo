@@ -2,10 +2,13 @@
 
 from ._ast import (
     ASSERT_WORD_BOUNDARY,
+    CHAR_BYTE_DOT,
+    CHAR_BYTE_DOTALL,
     CHAR_ASCII_DIGIT,
     CHAR_ASCII_WORD,
     BracketClassNode,
     CharClassNode,
+    EmptyNode,
     LiteralNode,
     OrNode,
     RegexNode,
@@ -206,6 +209,71 @@ def _is_prefixed_infix_search[
                                 return not _bracket_accepts[tail](
                                     ord(literal.value[byte=0])
                                 )
+    return False
+
+
+def _is_literal_dot_infix[nodes: List[RegexNode], root: RegexNode]() -> Bool:
+    """Recognize byte-oriented `literal .* literal`."""
+    comptime if not root.isa[SequenceNode]():
+        return False
+    else:
+        comptime sequence = root[SequenceNode]
+        comptime offset = 1 if (
+            sequence.count == 4 and nodes[sequence.items[0]].isa[EmptyNode]()
+        ) else 0
+        comptime if sequence.count != offset + 3:
+            return False
+        else:
+            comptime prefix = nodes[sequence.items[offset]]
+            comptime middle = nodes[sequence.items[offset + 1]]
+            comptime suffix = nodes[sequence.items[offset + 2]]
+            comptime if (
+                not prefix.isa[LiteralNode]()
+                or prefix[LiteralNode].value.byte_length() == 0
+                or not middle.isa[RepeatNode]()
+                or not suffix.isa[LiteralNode]()
+                or suffix[LiteralNode].value.byte_length() == 0
+            ):
+                return False
+            else:
+                comptime repeat = middle[RepeatNode]
+                comptime child = nodes[repeat.child]
+                return (
+                    repeat.minimum == 0
+                    and repeat.maximum == -1
+                    and child.isa[CharClassNode]()
+                    and (
+                        child[CharClassNode].kind == CHAR_BYTE_DOT
+                        or child[CharClassNode].kind == CHAR_BYTE_DOTALL
+                    )
+                )
+
+
+@always_inline
+def _search_literal_dot_infix[
+    nodes: List[RegexNode], root: RegexNode
+](text: ImmStringSpan) -> Bool:
+    """Search a literal-delimited dot run using native literal scans."""
+    comptime sequence = root[SequenceNode]
+    comptime offset = 1 if sequence.count == 4 else 0
+    comptime prefix = nodes[sequence.items[offset]][LiteralNode]
+    comptime repeat = nodes[sequence.items[offset + 1]][RepeatNode]
+    comptime dot = nodes[repeat.child][CharClassNode]
+    comptime suffix = nodes[sequence.items[offset + 2]][LiteralNode]
+    var start = text.find(prefix.value)
+    if start < 0:
+        return False
+    comptime if dot.kind == CHAR_BYTE_DOTALL:
+        return text.find(suffix.value, start + prefix.value.byte_length()) >= 0
+    while start >= 0:
+        var content_start = start + prefix.value.byte_length()
+        var suffix_start = text.find(suffix.value, content_start)
+        var newline = text.find("\n", content_start)
+        if suffix_start >= 0 and (newline < 0 or suffix_start <= newline):
+            return True
+        if newline < 0:
+            return False
+        start = text.find(prefix.value, newline + 1)
     return False
 
 
@@ -460,18 +528,33 @@ def _is_word_run_literal_suffix[
     return False
 
 
+def _word_boundary_inner_index[
+    nodes: List[RegexNode], root: RegexNode
+]() -> Int:
+    """Return the expression inside `\b ... \b`, or `-1`."""
+    comptime if root.isa[SequenceNode]():
+        comptime sequence = root[SequenceNode]
+        comptime if sequence.count == 3:
+            comptime if (
+                _is_word_boundary_node[nodes[sequence.items[0]]]()
+                and _is_word_boundary_node[nodes[sequence.items[2]]]()
+            ):
+                return sequence.items[1]
+        comptime if sequence.count == 4:
+            comptime if (
+                nodes[sequence.items[0]].isa[EmptyNode]()
+                and _is_word_boundary_node[nodes[sequence.items[1]]]()
+                and _is_word_boundary_node[nodes[sequence.items[3]]]()
+            ):
+                return sequence.items[2]
+    return -1
+
+
 def _is_word_boundary_wrapped[
     nodes: List[RegexNode], root: RegexNode
 ]() -> Bool:
     """Recognize `\b expression \b` for boundary-only candidate scans."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 3:
-            return (
-                _is_word_boundary_node[nodes[sequence.items[0]]]()
-                and _is_word_boundary_node[nodes[sequence.items[2]]]()
-            )
-    return False
+    return _word_boundary_inner_index[nodes, root]() >= 0
 
 
 def _node_starts_only_with_ascii_word[
@@ -612,8 +695,11 @@ def _count_word_boundary_wrapped[
     var next_start = 0
     var previous_is_word = False
     comptime root = regex.nodes[regex.root][SequenceNode]
+    comptime inner = _word_boundary_inner_index[
+        regex.nodes, regex.nodes[regex.root]
+    ]()
     comptime starts_with_word = _node_starts_only_with_ascii_word[
-        regex.nodes, root.items[1]
+        regex.nodes, inner
     ]()
     comptime if starts_with_word:
         if length > 0 and _is_ascii_word(Int(bytes[0])):

@@ -60,6 +60,10 @@ def test_case_insensitivity() raises:
     assert_equal(
         count_spans[folded_run_alternation]("xx SHERlock holMES! sher"), 14
     )
+    comptime folded_words = Regex("(?i)\\b(error|warning|timeout|failed)\\b")
+    var diagnostic = "ERROR warning timeout failed errors xfailed"
+    assert_equal(count[folded_words](diagnostic), 4)
+    assert_equal(count_spans[folded_words](diagnostic), 25)
     comptime folded_class = Regex("[a-f]+", case_insensitive=True)
     assert_true(matches[folded_class]("aBcDeF"))
     assert_false(matches[folded_class]("G"))
@@ -226,6 +230,10 @@ def test_literal_search_and_alternation() raises:
     assert_true(search[cat]("a cat naps"))
     assert_true(search[cat]("concatenate"))
     assert_false(search[cat]("dogs"))
+    comptime needle = Regex("needle")
+    assert_true(search[needle]("x" * 4096 + "needle"))
+    assert_false(search[needle]("x" * 4096))
+    assert_false(search[needle]("n" * 4096))
     assert_false(matches[cat]("a cat naps"))
 
     comptime animals = Regex("cat|dog|fox|horse")
@@ -237,6 +245,12 @@ def test_literal_search_and_alternation() raises:
     assert_true(search[animals]("x" * 63 + "horse"))
     assert_true(search[animals]("c" * 64 + "cat"))
     assert_false(search[animals]("x" * 64 + "hors"))
+
+    comptime many_animals = Regex(
+        "cat|dog|fox|horse|otter|badger|rabbit|weasel"
+    )
+    assert_equal(count[many_animals]("cat dog rabbit"), 3)
+    assert_equal(count_spans[many_animals]("cat dog rabbit"), 12)
 
     comptime aws_key = Regex("((?:ASIA|AKIA|AROA|AIDA)([A-Z0-7]{16}))")
     assert_true(search[aws_key]("prefix AKIA01234567ABCDEFGH suffix"))

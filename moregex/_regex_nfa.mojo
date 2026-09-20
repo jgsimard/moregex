@@ -1075,6 +1075,65 @@ def _nfa_search_bits[
 
 
 @always_inline
+def _nfa_full_static_bits[
+    state_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+    start_pc: Int,
+](text: ImmStringSpan) -> Bool:
+    """Run an anchored assertion-free Boolean NFA to the input end."""
+    comptime start = _static_epsilon_closure[state_count, program](start_pc)
+    if text.byte_length() == 0:
+        return start.matched
+    comptime accept_masks = _static_accept_masks[state_count, program]()
+    comptime transition_data = _static_transitions[state_count, program]()
+    comptime transitions = transition_data[0]
+    comptime transition_matches = transition_data[1]
+    var active = start.consuming
+    for position in range(text.byte_length()):
+        var pending = active & accept_masks[Int(text.as_bytes()[position])]
+        if position + 1 == text.byte_length():
+            return pending & transition_matches != 0
+        var following = UInt64(0)
+        while pending != 0:
+            var pc = Int(count_trailing_zeros(pending))
+            pending &= pending - 1
+            following |= transitions[pc]
+        if following == 0:
+            return False
+        active = following
+    return False
+
+
+@always_inline
+def _nfa_full_bits[
+    state_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+    start_pc: Int,
+](text: ImmStringSpan) -> Bool:
+    """Run an anchored Boolean NFA with runtime zero-width assertions."""
+    var active = _epsilon_closure_bits[state_count, program](
+        text, 0, UInt64(1) << UInt64(start_pc)
+    )
+    if text.byte_length() == 0:
+        return active.matched
+    for position in range(text.byte_length()):
+        var pending = active.consuming
+        var seed = UInt64(0)
+        var value = Int(text.as_bytes()[position])
+        while pending != 0:
+            var pc = Int(count_trailing_zeros(pending))
+            pending &= pending - 1
+            if _instruction_accepts[state_count, program](pc, value):
+                seed |= UInt64(1) << UInt64(program[pc].out1)
+        if seed == 0:
+            return False
+        active = _epsilon_closure_bits[state_count, program](
+            text, position + 1, seed
+        )
+    return active.matched
+
+
+@always_inline
 def _nfa_search_from[
     regex: Regex
 ](text: ImmStringSpan, search_start: Int) -> Bool:
@@ -1235,14 +1294,29 @@ def _nfa_match_captures_at[
 @always_inline
 def _nfa_full_match[regex: Regex](text: ImmStringSpan) -> Bool:
     """Match the complete input with ordered Thompson-NFA semantics."""
-    comptime compiled = _compile_program(regex.nodes, regex.root, True)
+    comptime compiled = _compile_program(regex.nodes, regex.root)
     comptime program_list = compiled[0]
     comptime start_pc = compiled[1]
     comptime state_count = len(program_list)
     comptime program = _materialize_program[program_list, state_count]()
-    var result = _nfa_ordered_match[state_count, program, start_pc, False](
-        text, 0
-    )
+    # Match priority cannot change a Boolean full-match result. Small NFAs can
+    # therefore use one bit per state instead of carrying ordered thread starts.
+    comptime if state_count <= 64:
+        comptime if not _program_has_assertions[state_count, program]():
+            return _nfa_full_static_bits[state_count, program, start_pc](text)
+        return _nfa_full_bits[state_count, program, start_pc](text)
+    # Large programs retain the ordered executor and an explicit strict-end
+    # assertion because their state set does not fit in one machine word.
+    comptime ordered_compiled = _compile_program(regex.nodes, regex.root, True)
+    comptime ordered_program_list = ordered_compiled[0]
+    comptime ordered_start_pc = ordered_compiled[1]
+    comptime ordered_state_count = len(ordered_program_list)
+    comptime ordered_program = _materialize_program[
+        ordered_program_list, ordered_state_count
+    ]()
+    var result = _nfa_ordered_match[
+        ordered_state_count, ordered_program, ordered_start_pc, False
+    ](text, 0)
     return Bool(result)
 
 

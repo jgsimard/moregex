@@ -1,6 +1,7 @@
 """Specialized case-folded count kernels."""
 
 from ._ast import (
+    ASSERT_WORD_BOUNDARY,
     BracketClassNode,
     OrNode,
     RegexNode,
@@ -15,12 +16,14 @@ from ._regex_common import (
     CLASS_SIMD_WIDTH,
     _bracket_accepts,
     _match_checksum,
+    _zero_width_matches,
 )
 
 from ._regex_analysis import (
     _bracket_mask,
     _fixed_node_mask,
     _fixed_node_width,
+    _is_ascii_fold_pair_node,
 )
 
 from ._regex_matcher import _match_node
@@ -29,6 +32,15 @@ from ._regex_matcher import _match_node
 from ._regex_literals import (
     _alternation_teddy3_mask,
 )
+
+
+def _is_ascii_fold_literal_sequence[
+    nodes: List[RegexNode], sequence: SequenceNode
+]() -> Bool:
+    comptime for item in range(sequence.count):
+        comptime if not _is_ascii_fold_pair_node[nodes, sequence.items[item]]():
+            return False
+    return sequence.count > 0
 
 
 @always_inline
@@ -86,8 +98,23 @@ def _casefold_alternation_match_length_at[
                 and _bracket_accepts[third](Int(text.as_bytes()[start + 2]))
             ):
                 continue
-            if all(_fixed_node_mask[nodes, option_index, 1, 0](text, start)):
-                return match_width
+            comptime if _is_ascii_fold_literal_sequence[nodes, sequence]():
+                var matched = True
+                comptime for position in range(sequence.count):
+                    comptime letter = nodes[sequence.items[position]][
+                        BracketClassNode
+                    ]
+                    comptime folded = letter.lows[0] | 0x20
+                    matched &= (
+                        Int(text.as_bytes()[start + position]) | 0x20
+                    ) == folded
+                if matched:
+                    return match_width
+            else:
+                if all(
+                    _fixed_node_mask[nodes, option_index, 1, 0](text, start)
+                ):
+                    return match_width
         else:
             var result = _match_node[nodes, option_index](text, start)
             if result:
@@ -97,7 +124,10 @@ def _casefold_alternation_match_length_at[
 
 @always_inline
 def _count_casefold_prefixed_alternation[
-    regex: Regex, alternation: OrNode, sum_spans: Bool
+    regex: Regex,
+    alternation: OrNode,
+    sum_spans: Bool,
+    word_boundaries: Bool = False,
 ](text: ImmStringSpan) -> Int:
     """SIMD-prefilter alternatives by their first three folded letters."""
     var length = text.byte_length()
@@ -114,20 +144,40 @@ def _count_casefold_prefixed_alternation[
             pending &= pending - 1
             var start = offset + lane
             if start >= next_start:
+                comptime if word_boundaries:
+                    if not _zero_width_matches(
+                        ASSERT_WORD_BOUNDARY, text, start
+                    ):
+                        continue
                 var match_length = _casefold_alternation_match_length_at[
                     regex.nodes, alternation
                 ](text, start)
                 if match_length > 0:
+                    comptime if word_boundaries:
+                        if not _zero_width_matches(
+                            ASSERT_WORD_BOUNDARY, text, start + match_length
+                        ):
+                            continue
                     total += _match_checksum[sum_spans](match_length)
                     next_start = start + match_length
         offset += CLASS_SIMD_WIDTH
 
     while offset + 2 < length:
         if offset >= next_start:
+            comptime if word_boundaries:
+                if not _zero_width_matches(ASSERT_WORD_BOUNDARY, text, offset):
+                    offset += 1
+                    continue
             var match_length = _casefold_alternation_match_length_at[
                 regex.nodes, alternation
             ](text, offset)
             if match_length > 0:
+                comptime if word_boundaries:
+                    if not _zero_width_matches(
+                        ASSERT_WORD_BOUNDARY, text, offset + match_length
+                    ):
+                        offset += 1
+                        continue
                 total += _match_checksum[sum_spans](match_length)
                 next_start = offset + match_length
         offset += 1

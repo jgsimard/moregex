@@ -173,6 +173,29 @@ def _nfa_match_semantics_required(
         ref sequence = node[SequenceNode]
         for i in range(sequence.count):
             var child_index = sequence.items[i]
+            ref child = nodes[child_index]
+            if child.isa[OrNode]():
+                ref alternation = child[OrNode]
+                var fixed_options = True
+                for option in range(alternation.count):
+                    if (
+                        _semantic_fixed_width(
+                            nodes, alternation.options[option]
+                        )
+                        < 0
+                    ):
+                        fixed_options = False
+                        break
+                if fixed_options:
+                    for option in range(alternation.count):
+                        if _nfa_match_semantics_required(
+                            nodes,
+                            alternation.options[option],
+                            has_suffix or i + 1 < sequence.count,
+                            require_end and i + 1 == sequence.count,
+                        ):
+                            return True
+                    continue
             if _nfa_match_semantics_required(
                 nodes,
                 child_index,
