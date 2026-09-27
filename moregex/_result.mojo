@@ -4,7 +4,7 @@ from std.utils import StaticTuple
 
 
 @fieldwise_init
-struct _MatchSpan(Copyable, TrivialRegisterPassable):
+struct _MatchSpan(TrivialRegisterPassable):
     """A half-open byte span shared by all executors."""
 
     var start: Int
@@ -32,7 +32,7 @@ struct _CaptureOffsets[capture_count: Int](ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct _CaptureParticipation(ImplicitlyCopyable, TrivialRegisterPassable):
+struct _CaptureParticipation(TrivialRegisterPassable):
     """A match span plus one bit for each participating capture group."""
 
     var span: _MatchSpan

@@ -1,28 +1,48 @@
 """Shared compile-time execution facts for search and aggregation."""
 
-from ._regex_analysis import (
-    _end_anchored_fixed_width,
-    _fixed_node_width,
+from ._analysis import (
     _has_generic_backtracking_risk,
-    _is_end_anchored,
-    _is_start_anchored,
-    _minimum_node_width,
-    _maximum_node_width,
     _required_literal_index,
     _required_one_byte_node_index,
     _simple_class_anchor_item_for_root,
     _simple_infix_literal_item_for_root,
     _start_filter_is_selective,
 )
-from ._regex_semantics import (
+from ._semantics import (
     _nfa_node_supported,
     _nfa_partial_semantics_required,
 )
 from ._syntax import Regex
+from ._width import (
+    _end_anchored_fixed_width,
+    _fixed_node_width,
+    _is_end_anchored,
+    _is_start_anchored,
+    _maximum_node_width,
+    _minimum_node_width,
+)
+
+
+comptime _SEARCH_ORDERED_NFA = 0
+comptime _SEARCH_START_ANCHORED = 1
+comptime _SEARCH_FIXED_WIDTH = 2
+comptime _SEARCH_SIMPLE_INFIX = 3
+comptime _SEARCH_SIMPLE_CLASS = 4
+comptime _SEARCH_GENERIC = 5
+
+comptime _COUNT_ORDERED_NFA = 0
+comptime _COUNT_START_ANCHORED = 1
+comptime _COUNT_END_ANCHORED_FIXED = 2
+comptime _COUNT_FIXED_WIDTH = 3
+comptime _COUNT_SIMPLE_INFIX = 4
+comptime _COUNT_SIMPLE_CLASS = 5
+comptime _COUNT_GENERIC = 6
 
 
 @fieldwise_init
-struct _RegexExecutionPlan(Copyable, TrivialRegisterPassable):
+struct _RegexExecutionPlan(TrivialRegisterPassable):
+    var search_strategy: Int
+    var count_strategy: Int
     var minimum_width: Int
     var maximum_width: Int
     var fixed_width: Int
@@ -35,7 +55,6 @@ struct _RegexExecutionPlan(Copyable, TrivialRegisterPassable):
     var end_anchored: Bool
     var selective_start: Bool
     var backtracking_risk: Bool
-    var requires_ordered_nfa: Bool
     var nfa_supported: Bool
 
     @always_inline
@@ -79,7 +98,32 @@ def _execution_plan[regex: Regex]() -> _RegexExecutionPlan:
         regex.nodes, regex.root
     )
     comptime nfa_supported = _nfa_node_supported(regex.nodes, regex.root)
+    var search_strategy = _SEARCH_GENERIC
+    var count_strategy = _COUNT_GENERIC
+    comptime if requires_ordered_nfa:
+        search_strategy = _SEARCH_ORDERED_NFA
+        count_strategy = _COUNT_ORDERED_NFA
+    elif start_anchored:
+        search_strategy = _SEARCH_START_ANCHORED
+        count_strategy = _COUNT_START_ANCHORED
+    else:
+        comptime if fixed > 0:
+            search_strategy = _SEARCH_FIXED_WIDTH
+        elif simple_infix >= 0:
+            search_strategy = _SEARCH_SIMPLE_INFIX
+        elif simple_class >= 0:
+            search_strategy = _SEARCH_SIMPLE_CLASS
+        comptime if end_width >= 0:
+            count_strategy = _COUNT_END_ANCHORED_FIXED
+        elif fixed > 0:
+            count_strategy = _COUNT_FIXED_WIDTH
+        elif simple_infix >= 0:
+            count_strategy = _COUNT_SIMPLE_INFIX
+        elif simple_class >= 0:
+            count_strategy = _COUNT_SIMPLE_CLASS
     return _RegexExecutionPlan(
+        search_strategy,
+        count_strategy,
         minimum,
         maximum,
         fixed,
@@ -92,6 +136,5 @@ def _execution_plan[regex: Regex]() -> _RegexExecutionPlan:
         end_anchored,
         selective,
         risky,
-        requires_ordered_nfa,
         nfa_supported,
     )

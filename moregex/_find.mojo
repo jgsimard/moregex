@@ -1,5 +1,6 @@
 """Match-span, capture, and iteration APIs."""
 
+from ._width import _fixed_node_width
 from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 from std.utils import StaticTuple
@@ -21,17 +22,16 @@ from ._ast import (
     SequenceNode,
     ZeroWidthNode,
 )
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     _MatchResult,
     _accepts_class,
     _bracket_accepts,
     _match_literal,
 )
-from ._regex_analysis import _fixed_node_width
-from ._regex_matcher import _match_node
-from ._regex_result import _CaptureOffsets
-from ._regex_nfa import (
+from ._ast_matcher import _match_node
+from ._result import _CaptureOffsets
+from ._nfa import (
     _nfa_find_captures,
     _nfa_find_from,
     _nfa_match_captures_at,

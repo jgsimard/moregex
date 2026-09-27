@@ -15,8 +15,8 @@ from ._ast import (
 )
 from ._syntax import Regex
 
-from ._regex_masks import _runtime_bracket_accepts
-from ._regex_common import (
+from ._byte_predicates import _runtime_bracket_accepts
+from ._common import (
     _MatchResult,
     _runtime_class_accepts,
     _utf8_codepoint_width,

@@ -3,7 +3,7 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from std.utils import StaticTuple
 
-from moregex._regex_result import (
+from moregex._result import (
     _CaptureOffsets,
     _CaptureParticipation,
     _MatchSpan,

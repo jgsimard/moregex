@@ -17,7 +17,7 @@ from .regex import (
     search,
     search_span,
 )
-from ._regex_find import (
+from ._find import (
     RegexMatch,
     find,
     find_span,

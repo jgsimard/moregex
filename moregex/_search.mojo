@@ -1,5 +1,6 @@
 """Specialized regex search kernels."""
 
+from ._simd import _search_simd_width_ladder
 from ._ast import (
     ASSERT_WORD_BOUNDARY,
     CHAR_BYTE_DOT,
@@ -22,7 +23,7 @@ from std.math import iota
 from std.memory import pack_bits
 from std.sys.intrinsics import masked_load
 
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     _bracket_accepts,
     _class_mask,
@@ -30,16 +31,15 @@ from ._regex_common import (
     _is_ascii_word,
     _match_checksum,
     _match_literal,
-    _search_simd_width_ladder,
 )
 
-from ._regex_analysis import (
+from ._analysis import (
     _bracket_mask,
     _is_exact_bracket_node_range,
 )
 
-from ._regex_matcher import _match_node
-from ._regex_scan import _search_one_byte_run
+from ._ast_matcher import _match_node
+from ._byte_scan import _search_one_byte_run
 
 
 def _is_unbounded_bracket_repeat[

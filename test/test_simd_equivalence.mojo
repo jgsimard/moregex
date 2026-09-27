@@ -15,7 +15,7 @@ from moregex._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
 )
-from moregex._regex_common import _accepts_class, _class_mask
+from moregex._common import _accepts_class, _class_mask
 
 
 def check_class[kind: Int]() raises:

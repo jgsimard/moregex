@@ -28,7 +28,7 @@ comptime ASSERT_LINE_END = 5
 
 
 @fieldwise_init
-struct EmptyNode(ImplicitlyCopyable):
+struct EmptyNode(TrivialRegisterPassable):
     pass
 
 
@@ -38,7 +38,7 @@ struct LiteralNode(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct CharClassNode(ImplicitlyCopyable):
+struct CharClassNode(TrivialRegisterPassable):
     var kind: Int
 
 
@@ -51,7 +51,7 @@ struct BracketClassNode(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ZeroWidthNode(ImplicitlyCopyable):
+struct ZeroWidthNode(TrivialRegisterPassable):
     var kind: Int
 
 
@@ -62,7 +62,7 @@ struct OrNode(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct RepeatNode(ImplicitlyCopyable):
+struct RepeatNode(TrivialRegisterPassable):
     var child: Int
     var minimum: Int
     # -1 means unbounded.
@@ -77,7 +77,7 @@ struct SequenceNode(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct CaptureNode(ImplicitlyCopyable):
+struct CaptureNode(TrivialRegisterPassable):
     var child: Int
     var index: Int
 

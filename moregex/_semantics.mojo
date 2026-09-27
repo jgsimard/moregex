@@ -1,8 +1,8 @@
 """Compile-time checks for regex execution-semantic coverage."""
 
 from ._ast import CharClassNode, OrNode, RegexNode, RepeatNode, SequenceNode
-from ._regex_tuning import MAX_NFA_REPEAT_EXPANSION
-from ._regex_width import _semantic_fixed_width
+from ._tuning import MAX_NFA_REPEAT_EXPANSION
+from ._width import _semantic_fixed_width
 
 
 def _nfa_match_semantics_required(

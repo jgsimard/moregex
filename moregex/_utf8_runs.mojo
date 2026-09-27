@@ -13,9 +13,9 @@ from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 from std.utils import StaticTuple
 
-from ._regex_masks import _build_bracket_masks
-from ._regex_analysis import _node_start_accepts, _node_start_mask
-from ._regex_common import (
+from ._byte_predicates import _build_bracket_masks
+from ._analysis import _node_start_accepts, _node_start_mask
+from ._common import (
     CLASS_SIMD_WIDTH,
     _bracket_accepts,
     _match_checksum,
@@ -497,7 +497,7 @@ def _count_utf8_byte_class_repeat[
 
 
 @fieldwise_init
-struct _Utf8InfixMatch(ImplicitlyCopyable):
+struct _Utf8InfixMatch(TrivialRegisterPassable):
     var start: Int
     var end: Int
 

@@ -12,7 +12,6 @@ from ._ast import (
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
-    CaptureNode,
     CharClassNode,
     EmptyNode,
     LiteralNode,
@@ -26,7 +25,7 @@ from std.algorithm.functional import vectorize
 from std.math import iota
 from std.sys.intrinsics import masked_load
 
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     _accepts_class,
     _bracket_accepts,
@@ -34,22 +33,20 @@ from ._regex_common import (
     _class_mask,
 )
 from ._ast_equal import _same_bracket_ranges
-from ._regex_width import (
-    _semantic_fixed_width,
-    _semantic_maximum_width,
-    _semantic_minimum_width,
+from ._width import (
+    _fixed_node_width,
+    _minimum_node_width,
 )
-from ._syntax import Regex
 
 
 @fieldwise_init
-struct _LinePrefixRunLiteralPlan(Copyable):
+struct _LinePrefixRunLiteralPlan(TrivialRegisterPassable):
     var repeat_index: Int
     var literal_index: Int
 
 
 @fieldwise_init
-struct _AnchoredLazyLiteralPlan(Copyable):
+struct _AnchoredLazyLiteralPlan(TrivialRegisterPassable):
     var prefix_repeat_index: Int
     var prefix_literal_index: Int
     var search_literal_index: Int
@@ -149,144 +146,6 @@ def _line_prefix_run_literal_plan[
     return None
 
 
-def _sequence_mandatory_capture_mask[
-    nodes: List[RegexNode], sequence: SequenceNode, item: Int
-]() -> Int:
-    comptime if item == sequence.count:
-        return 0
-    return _mandatory_capture_mask[nodes, sequence.items[item]]() | (
-        _sequence_mandatory_capture_mask[nodes, sequence, item + 1]()
-    )
-
-
-def _alternation_mandatory_capture_mask[
-    nodes: List[RegexNode], alternation: OrNode
-]() -> Int:
-    comptime if alternation.count == 0:
-        return 0
-    var required = _mandatory_capture_mask[nodes, alternation.options[0]]()
-    comptime for option in range(1, alternation.count):
-        required &= _mandatory_capture_mask[
-            nodes, alternation.options[option]
-        ]()
-    return required
-
-
-def _mandatory_capture_mask[nodes: List[RegexNode], node_index: Int]() -> Int:
-    """Return capture groups participating in every match of an AST node."""
-    comptime node = nodes[node_index]
-    comptime if node.isa[CaptureNode]():
-        comptime capture = node[CaptureNode]
-        return (Int(1) << (capture.index - 1)) | _mandatory_capture_mask[
-            nodes, capture.child
-        ]()
-    elif node.isa[SequenceNode]():
-        return _sequence_mandatory_capture_mask[nodes, node[SequenceNode], 0]()
-    elif node.isa[OrNode]():
-        return _alternation_mandatory_capture_mask[nodes, node[OrNode]]()
-    elif node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        comptime if repeat.minimum > 0:
-            return _mandatory_capture_mask[nodes, repeat.child]()
-        return 0
-    return 0
-
-
-def _all_captures_mandatory[regex: Regex]() -> Bool:
-    """Return whether every numbered group participates in every match."""
-    comptime if regex.capture_count == 0:
-        return True
-    comptime expected = (Int(1) << regex.capture_count) - 1
-    return (
-        _mandatory_capture_mask[regex.nodes, regex.capture_root]() == expected
-    )
-
-
-def _constant_capture_participation_sequence[
-    nodes: List[RegexNode], sequence: SequenceNode, item: Int
-]() -> Int:
-    """Return the participating capture count, or -1 when it can vary."""
-    comptime if item == sequence.count:
-        return 0
-    else:
-        comptime head = _constant_capture_participation[
-            nodes, sequence.items[item]
-        ]()
-        comptime tail = _constant_capture_participation_sequence[
-            nodes, sequence, item + 1
-        ]()
-        comptime if head < 0 or tail < 0:
-            return -1
-        return head + tail
-
-
-def _constant_capture_participation_alternation[
-    nodes: List[RegexNode], alternation: OrNode
-]() -> Int:
-    """Return a common alternative capture count, or -1 when it varies."""
-    comptime if alternation.count == 0:
-        return 0
-    else:
-        comptime expected = _constant_capture_participation[
-            nodes, alternation.options[0]
-        ]()
-        comptime if expected < 0:
-            return -1
-        comptime for option in range(1, alternation.count):
-            comptime actual = _constant_capture_participation[
-                nodes, alternation.options[option]
-            ]()
-            comptime if actual != expected:
-                return -1
-        return expected
-
-
-def _constant_capture_participation[
-    nodes: List[RegexNode], node_index: Int
-]() -> Int:
-    """Return captures participating in every match, independent of identity.
-
-    A negative result means that the count can vary. A repeated branch with
-    captures is conservative: different iterations may populate different
-    groups even when each iteration has the same capture count.
-    """
-    comptime node = nodes[node_index]
-    comptime if node.isa[CaptureNode]():
-        comptime child = _constant_capture_participation[
-            nodes, node[CaptureNode].child
-        ]()
-        comptime if child < 0:
-            return -1
-        return child + 1
-    elif node.isa[SequenceNode]():
-        return _constant_capture_participation_sequence[
-            nodes, node[SequenceNode], 0
-        ]()
-    elif node.isa[OrNode]():
-        return _constant_capture_participation_alternation[
-            nodes, node[OrNode]
-        ]()
-    elif node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        comptime child = _constant_capture_participation[nodes, repeat.child]()
-        comptime if repeat.maximum == 0 or child == 0:
-            return 0
-        comptime if repeat.minimum == 0 or repeat.maximum != 1 or child < 0:
-            return -1
-        return child
-    return 0
-
-
-def _constant_capture_count[regex: Regex]() -> Int:
-    """Return the fixed participating-group count including group zero."""
-    comptime captures = _constant_capture_participation[
-        regex.nodes, regex.capture_root
-    ]()
-    comptime if captures < 0:
-        return -1
-    return captures + 1
-
-
 def _all_literal_options[
     nodes: List[RegexNode], alternation: OrNode, minimum: Int = 0
 ]() -> Bool:
@@ -337,16 +196,6 @@ def _bracket_mask[
     comptime if node.negated:
         return accepted ^ SIMD[.bool, width](fill=True)
     return accepted
-
-
-def _minimum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
-    """Return the minimum bytes consumed by any successful match."""
-    return comptime (_semantic_minimum_width(nodes, node_index))
-
-
-def _maximum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
-    """Return the maximum bytes consumed, or -1 when unbounded."""
-    return comptime (_semantic_maximum_width(nodes, node_index))
 
 
 def _sequence_required_literal_index[
@@ -639,11 +488,6 @@ def _has_generic_backtracking_risk[
             nodes, node[SequenceNode], 0
         ]()
     return False
-
-
-def _fixed_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
-    """Return a node's exact byte width, or -1 when it is variable."""
-    return comptime (_semantic_fixed_width(nodes, node_index, False))
 
 
 def _is_ascii_fold_pair[node: BracketClassNode]() -> Bool:
@@ -1135,75 +979,6 @@ def _is_start_assertion_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime if node.isa[ZeroWidthNode]():
         return node[ZeroWidthNode].kind == ASSERT_INPUT_START
     return False
-
-
-def _is_start_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
-    """Return whether the expression can only match at byte zero."""
-    comptime node = nodes[node_index]
-    comptime if _is_start_assertion_node[nodes, node_index]():
-        return True
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime for i in range(sequence.count):
-            comptime item = nodes[sequence.items[i]]
-            comptime if item.isa[EmptyNode]():
-                continue
-            comptime if item.isa[ZeroWidthNode]():
-                comptime if _is_start_assertion_node[
-                    nodes, sequence.items[i]
-                ]():
-                    return True
-                continue
-            return False
-    return False
-
-
-def _is_end_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
-    """Return whether the expression requires input end (or its final LF)."""
-    comptime node = nodes[node_index]
-    comptime if _is_end_assertion_node[nodes, node_index]():
-        return True
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime for offset in range(sequence.count):
-            comptime i = sequence.count - offset - 1
-            comptime item = nodes[sequence.items[i]]
-            comptime if item.isa[EmptyNode]():
-                continue
-            comptime if item.isa[ZeroWidthNode]():
-                comptime if _is_end_assertion_node[nodes, sequence.items[i]]():
-                    return True
-                continue
-            return False
-    return False
-
-
-def _fixed_sequence_prefix_width[
-    nodes: List[RegexNode], sequence: SequenceNode, item: Int
-]() -> Int:
-    comptime if item == sequence.count - 1:
-        return 0
-    else:
-        comptime width = _fixed_node_width[nodes, sequence.items[item]]()
-        comptime suffix_width = _fixed_sequence_prefix_width[
-            nodes, sequence, item + 1
-        ]()
-        comptime if width < 0 or suffix_width < 0:
-            return -1
-        return width + suffix_width
-
-
-def _end_anchored_fixed_width[nodes: List[RegexNode], node_index: Int]() -> Int:
-    """Return consuming width for `fixed-width $`, or -1."""
-    comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count >= 2:
-            comptime if _is_end_assertion_node[
-                nodes, sequence.items[sequence.count - 1]
-            ]():
-                return _fixed_sequence_prefix_width[nodes, sequence, 0]()
-    return -1
 
 
 def _simple_infix_literal_item_from[
@@ -1758,7 +1533,7 @@ def _is_repeated_lazy_dot_delimiter_suffix[
 
 
 @fieldwise_init
-struct _TwoDelimiterBracketRunsPlan(Copyable):
+struct _TwoDelimiterBracketRunsPlan(TrivialRegisterPassable):
     var first_delimiter_index: Int
     var left_child: Int
     var middle_child: Int
@@ -2090,7 +1865,7 @@ def _fixed_offset_coverage[
 
 
 @fieldwise_init
-struct _FixedPrefilterPlan(Copyable):
+struct _FixedPrefilterPlan(TrivialRegisterPassable):
     var first: Int
     var second: Int
     var third: Int

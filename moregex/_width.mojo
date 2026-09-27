@@ -5,6 +5,8 @@ execution planning so those layers cannot silently diverge.
 """
 
 from ._ast import (
+    ASSERT_INPUT_END,
+    ASSERT_INPUT_START,
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
     BracketClassNode,
@@ -166,3 +168,105 @@ def _semantic_maximum_width(nodes: List[RegexNode], node_index: Int) -> Int:
             return -1
         width += child_width
     return width
+
+
+def _minimum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return the minimum bytes consumed by any successful match."""
+    return comptime (_semantic_minimum_width(nodes, node_index))
+
+
+def _maximum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return the maximum bytes consumed, or -1 when unbounded."""
+    return comptime (_semantic_maximum_width(nodes, node_index))
+
+
+def _fixed_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return a node's exact byte width, or -1 when it is variable."""
+    return comptime (_semantic_fixed_width(nodes, node_index, False))
+
+
+def _is_start_assertion_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
+    comptime node = nodes[node_index]
+    comptime if node.isa[ZeroWidthNode]():
+        return node[ZeroWidthNode].kind == ASSERT_INPUT_START
+    return False
+
+
+def _is_end_assertion_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
+    comptime node = nodes[node_index]
+    comptime if node.isa[ZeroWidthNode]():
+        return node[ZeroWidthNode].kind == ASSERT_INPUT_END
+    return False
+
+
+def _semantic_is_start_anchored(
+    nodes: List[RegexNode], node_index: Int
+) -> Bool:
+    """Return whether the expression can only match at byte zero."""
+    ref node = nodes[node_index]
+    if node.isa[ZeroWidthNode]():
+        return node[ZeroWidthNode].kind == ASSERT_INPUT_START
+    if node.isa[SequenceNode]():
+        ref sequence = node[SequenceNode]
+        for i in range(sequence.count):
+            ref item = nodes[sequence.items[i]]
+            if item.isa[EmptyNode]():
+                continue
+            if item.isa[ZeroWidthNode]():
+                if item[ZeroWidthNode].kind == ASSERT_INPUT_START:
+                    return True
+                continue
+            return False
+    return False
+
+
+def _is_start_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
+    return comptime (_semantic_is_start_anchored(nodes, node_index))
+
+
+def _is_end_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
+    """Return whether the expression requires input end (or its final LF)."""
+    comptime node = nodes[node_index]
+    comptime if _is_end_assertion_node[nodes, node_index]():
+        return True
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime for offset in range(sequence.count):
+            comptime i = sequence.count - offset - 1
+            comptime item = nodes[sequence.items[i]]
+            comptime if item.isa[EmptyNode]():
+                continue
+            comptime if item.isa[ZeroWidthNode]():
+                comptime if _is_end_assertion_node[nodes, sequence.items[i]]():
+                    return True
+                continue
+            return False
+    return False
+
+
+def _fixed_sequence_prefix_width[
+    nodes: List[RegexNode], sequence: SequenceNode, item: Int
+]() -> Int:
+    comptime if item == sequence.count - 1:
+        return 0
+    else:
+        comptime width = _fixed_node_width[nodes, sequence.items[item]]()
+        comptime suffix_width = _fixed_sequence_prefix_width[
+            nodes, sequence, item + 1
+        ]()
+        comptime if width < 0 or suffix_width < 0:
+            return -1
+        return width + suffix_width
+
+
+def _end_anchored_fixed_width[nodes: List[RegexNode], node_index: Int]() -> Int:
+    """Return consuming width for fixed-width followed by input end."""
+    comptime node = nodes[node_index]
+    comptime if node.isa[SequenceNode]():
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count >= 2:
+            comptime if _is_end_assertion_node[
+                nodes, sequence.items[sequence.count - 1]
+            ]():
+                return _fixed_sequence_prefix_width[nodes, sequence, 0]()
+    return -1

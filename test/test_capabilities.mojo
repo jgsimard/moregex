@@ -1,5 +1,5 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
-from moregex._regex_runtime import matches_runtime
+from moregex._runtime import matches_runtime
 
 from moregex import (
     Regex,

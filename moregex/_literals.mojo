@@ -13,13 +13,13 @@ from std.memory import pack_bits
 from std.sys import CompilationTarget, llvm_intrinsic
 from std.utils import StaticTuple
 
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     _match_checksum,
     _match_literal,
 )
 
-from ._regex_analysis import (
+from ._analysis import (
     _all_literal_options,
     _literal_alternation_same_first_byte,
     _sequence_prefix_literal_index,

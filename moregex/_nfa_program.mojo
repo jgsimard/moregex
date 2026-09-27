@@ -17,7 +17,8 @@ from ._ast import (
     SequenceNode,
     ZeroWidthNode,
 )
-from ._regex_masks import _build_bracket_masks
+from ._byte_predicates import _build_bracket_masks
+from ._common import _runtime_class_accepts, _zero_width_matches
 
 
 comptime _NFA_MATCH = 0
@@ -32,7 +33,7 @@ comptime _NFA_STRICT_END = -1
 
 
 @fieldwise_init
-struct _NFAInstruction(ImplicitlyCopyable, TrivialRegisterPassable):
+struct _NFAInstruction(TrivialRegisterPassable):
     var kind: Int
     var out1: Int
     var out2: Int
@@ -41,6 +42,35 @@ struct _NFAInstruction(ImplicitlyCopyable, TrivialRegisterPassable):
     var mask1: UInt64
     var mask2: UInt64
     var mask3: UInt64
+
+
+@always_inline
+def _runtime_assertion_matches(
+    kind: Int, text: ImmStringSpan, position: Int
+) -> Bool:
+    if kind == _NFA_STRICT_END:
+        return position == text.byte_length()
+    return _zero_width_matches(kind, text, position)
+
+
+@always_inline
+def _instruction_accepts[
+    state_count: Int,
+    program: StaticTuple[_NFAInstruction, state_count],
+](pc: Int, value: Int) -> Bool:
+    var instruction = program[pc]
+    if instruction.kind == _NFA_BYTE:
+        return instruction.arg == value
+    if instruction.kind == _NFA_CLASS:
+        return _runtime_class_accepts(instruction.arg, value)
+    var bit = UInt64(1) << UInt64(value % 64)
+    if value < 64:
+        return instruction.mask0 & bit != 0
+    if value < 128:
+        return instruction.mask1 & bit != 0
+    if value < 192:
+        return instruction.mask2 & bit != 0
+    return instruction.mask3 & bit != 0
 
 
 def _emit_instruction(

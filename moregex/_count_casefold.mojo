@@ -1,5 +1,6 @@
 """Specialized case-folded count kernels."""
 
+from ._width import _fixed_node_width
 from ._ast import (
     ASSERT_WORD_BOUNDARY,
     BracketClassNode,
@@ -12,24 +13,23 @@ from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 from std.sys import CompilationTarget
 
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     _bracket_accepts,
     _match_checksum,
     _zero_width_matches,
 )
 
-from ._regex_analysis import (
+from ._analysis import (
     _bracket_mask,
     _fixed_node_mask,
-    _fixed_node_width,
     _is_ascii_fold_pair_node,
 )
 
-from ._regex_matcher import _match_node
+from ._ast_matcher import _match_node
 
 
-from ._regex_literals import (
+from ._literals import (
     _alternation_teddy3_mask,
 )
 

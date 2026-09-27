@@ -2,10 +2,45 @@
 
 from std.os import abort
 
-from ._ast import RegexNode
-from ._parser import _Parser, _append_without_captures
-from ._regex_nfa_program import _NFAInstruction, _compile_program
-from ._regex_semantics import _semantics_supported
+from ._ast import LiteralNode, RegexNode
+from ._parser import _Parser
+from ._normalization import _append_without_captures
+from ._nfa_program import _NFAInstruction, _compile_program
+from ._semantics import _semantics_supported
+from ._width import _semantic_is_start_anchored
+
+
+struct _CompiledProgram(ImplicitlyCopyable):
+    """One materialized NFA program and its entry instruction."""
+
+    var instructions: List[_NFAInstruction]
+    var start: Int
+    var start_anchored: Bool
+
+    def __init__(out self):
+        self.instructions = List[_NFAInstruction]()
+        self.start = 0
+        self.start_anchored = False
+
+    def __init__(
+        out self,
+        instructions: List[_NFAInstruction],
+        start: Int,
+        start_anchored: Bool,
+    ):
+        self.instructions = instructions.copy()
+        self.start = start
+        self.start_anchored = start_anchored
+
+    def __init__(out self, *, copy: Self):
+        self.instructions = copy.instructions.copy()
+        self.start = copy.start
+        self.start_anchored = copy.start_anchored
+
+    def __init__(out self, *, deinit move: Self):
+        self.instructions = move.instructions^
+        self.start = move.start
+        self.start_anchored = move.start_anchored
 
 
 struct Regex(ImplicitlyCopyable):
@@ -17,12 +52,9 @@ struct Regex(ImplicitlyCopyable):
     var has_static_source: Bool
     var capture_root: Int
     var capture_count: Int
-    var nfa_program: List[_NFAInstruction]
-    var nfa_start: Int
-    var capture_program: List[_NFAInstruction]
-    var capture_start: Int
-    var strict_program: List[_NFAInstruction]
-    var strict_start: Int
+    var nfa: _CompiledProgram
+    var capture_nfa: _CompiledProgram
+    var strict_nfa: _CompiledProgram
 
     def _parse(
         mut self,
@@ -52,19 +84,25 @@ struct Regex(ImplicitlyCopyable):
                     "pattern requires ordered NFA semantics beyond the "
                     "configured compile-time expansion limit"
                 )
+            var start_anchored = _semantic_is_start_anchored(
+                self.nodes, self.root
+            )
             var compiled = _compile_program(self.nodes, self.root)
-            self.nfa_program = compiled[0].copy()
-            self.nfa_start = compiled[1]
+            self.nfa = _CompiledProgram(
+                compiled[0], compiled[1], start_anchored
+            )
             if self.capture_count > 0:
                 var captured = _compile_program(self.nodes, self.capture_root)
-                self.capture_program = captured[0].copy()
-                self.capture_start = captured[1]
-            if len(self.nfa_program) > 64:
+                self.capture_nfa = _CompiledProgram(
+                    captured[0], captured[1], start_anchored
+                )
+            if len(self.nfa.instructions) > 64:
                 var strict = _compile_program(
                     self.nodes, self.root, strict_end=True
                 )
-                self.strict_program = strict[0].copy()
-                self.strict_start = strict[1]
+                self.strict_nfa = _CompiledProgram(
+                    strict[0], strict[1], start_anchored
+                )
         except error:
             abort(String(t"invalid regex '{parser.pattern}': {error}"))
 
@@ -82,12 +120,9 @@ struct Regex(ImplicitlyCopyable):
         self.has_static_source = has_static_source
         self.capture_root = 0
         self.capture_count = 0
-        self.nfa_program = List[_NFAInstruction]()
-        self.nfa_start = 0
-        self.capture_program = List[_NFAInstruction]()
-        self.capture_start = 0
-        self.strict_program = List[_NFAInstruction]()
-        self.strict_start = 0
+        self.nfa = _CompiledProgram()
+        self.capture_nfa = _CompiledProgram()
+        self.strict_nfa = _CompiledProgram()
         self._parse(pattern, case_insensitive, unicode)
 
     def __init__(
@@ -136,12 +171,9 @@ struct Regex(ImplicitlyCopyable):
         self.has_static_source = copy.has_static_source
         self.capture_root = copy.capture_root
         self.capture_count = copy.capture_count
-        self.nfa_program = copy.nfa_program.copy()
-        self.nfa_start = copy.nfa_start
-        self.capture_program = copy.capture_program.copy()
-        self.capture_start = copy.capture_start
-        self.strict_program = copy.strict_program.copy()
-        self.strict_start = copy.strict_start
+        self.nfa = copy.nfa
+        self.capture_nfa = copy.capture_nfa
+        self.strict_nfa = copy.strict_nfa
 
     def __init__(out self, *, deinit move: Self):
         self.nodes = move.nodes^
@@ -150,9 +182,22 @@ struct Regex(ImplicitlyCopyable):
         self.has_static_source = move.has_static_source
         self.capture_root = move.capture_root
         self.capture_count = move.capture_count
-        self.nfa_program = move.nfa_program^
-        self.nfa_start = move.nfa_start
-        self.capture_program = move.capture_program^
-        self.capture_start = move.capture_start
-        self.strict_program = move.strict_program^
-        self.strict_start = move.strict_start
+        self.nfa = move.nfa^
+        self.capture_nfa = move.capture_nfa^
+        self.strict_nfa = move.strict_nfa^
+
+
+def _static_source_is_root_literal[regex: Regex]() -> Bool:
+    """Return whether the original pattern is the root literal."""
+    comptime if not regex.has_static_source:
+        return False
+    comptime root = regex.nodes[regex.root]
+    comptime if not root.isa[LiteralNode]():
+        return False
+    comptime literal = root[LiteralNode]
+    comptime if regex.source.byte_length() != literal.value.byte_length():
+        return False
+    comptime for i in range(literal.value.byte_length()):
+        comptime if regex.source.as_bytes()[i] != literal.value.as_bytes()[i]:
+            return False
+    return True

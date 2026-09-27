@@ -1,4 +1,4 @@
-"""Byte-mask construction independent of Regex storage."""
+"""Shared byte masks, character predicates, and NFA assertions."""
 
 from std.utils import StaticTuple
 

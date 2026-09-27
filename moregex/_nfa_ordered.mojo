@@ -2,19 +2,17 @@
 
 from std.utils import StaticTuple
 
-from ._regex_nfa_byte import (
-    _instruction_accepts,
-    _runtime_assertion_matches,
-)
-from ._regex_nfa_program import (
+from ._nfa_program import (
     _NFA_ASSERT,
     _NFA_CAPTURE_END,
     _NFA_CAPTURE_START,
     _NFAInstruction,
+    _instruction_accepts,
+    _runtime_assertion_matches,
     _NFA_MATCH,
     _NFA_SPLIT,
 )
-from ._regex_result import (
+from ._result import (
     _CaptureOffsets,
     _CaptureParticipation,
     _MatchSpan,

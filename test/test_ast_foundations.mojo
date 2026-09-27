@@ -4,7 +4,7 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from moregex import Regex
 from moregex._ast_equal import _same_ast_node, _same_bracket_class
-from moregex._regex_width import (
+from moregex._width import (
     _semantic_fixed_width,
     _semantic_maximum_width,
     _semantic_minimum_width,

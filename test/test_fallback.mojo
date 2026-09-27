@@ -3,8 +3,8 @@
 from std.testing import TestSuite, assert_equal
 
 from moregex import Regex
-from moregex._regex_common import _match_checksum
-from moregex._regex_matcher import _match_node
+from moregex._common import _match_checksum
+from moregex._matcher import _match_node
 from moregex.regex import _count_planned, _search_planned
 
 

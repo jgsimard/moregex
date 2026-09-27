@@ -3,7 +3,7 @@
 from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 
-from ._regex_common import (
+from ._common import (
     CLASS_SIMD_WIDTH,
     CLASS_TAIL_SIMD_WIDTH,
     _match_checksum,

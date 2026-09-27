@@ -3,7 +3,7 @@
 from std.testing import TestSuite, assert_equal, assert_true
 
 from moregex import Regex, search
-from moregex._regex_nfa import (
+from moregex._nfa import (
     _nfa_find_capture_participation,
     _nfa_find_captures,
     _nfa_find_from,
