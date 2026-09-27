@@ -3,8 +3,6 @@
 from ._syntax import Regex
 from ._execute import (
     _count_impl,
-    _count_planned,
-    _search_planned,
     search,
     search_span,
 )

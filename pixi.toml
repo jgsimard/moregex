@@ -16,7 +16,7 @@ bench-fallback-build = "mkdir -p build && mojo build -Werror -O3 -I . bench/benc
 bench-fallback = { cmd = "./build/bench_fallback", depends-on = ["bench-fallback-build"] }
 bench-kernels-build = "mkdir -p build && mojo build -Werror -O3 -I . bench/bench_kernel_comparison.mojo -o build/bench_kernel_comparison"
 bench-kernels = { cmd = "./build/bench_kernel_comparison", depends-on = ["bench-kernels-build"] }
-bench-kernels-report = { cmd = "python bench/render_kernel_comparison.py", depends-on = ["bench-kernels-build"] }
+bench-kernels-report = { cmd = "python bench/render_kernel_comparison.py > bench/results/kernel_comparison.md", depends-on = ["bench-kernels-build"] }
 bench-compile = "bash scripts/bench_compile_time.sh"
 bench-cross = "bash scripts/run_cross_benchmarks.sh"
 bench-throughput = "bash scripts/run_throughput_benchmarks.sh"

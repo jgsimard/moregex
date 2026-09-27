@@ -5,7 +5,7 @@ from std.testing import TestSuite, assert_equal
 from moregex import Regex
 from moregex._common import _match_checksum
 from moregex._matcher import _match_node
-from moregex.regex import _count_planned, _search_planned
+from moregex._execute import _count_planned, _search_planned
 
 
 def reference_count[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
