@@ -20,7 +20,6 @@ from ._syntax import Regex
 from std.bit import count_trailing_zeros
 from std.math import iota
 from std.memory import pack_bits
-from std.sys import CompilationTarget, llvm_intrinsic, simd_width_of
 from std.sys.intrinsics import masked_load
 
 from ._regex_common import (
@@ -40,7 +39,7 @@ from ._regex_analysis import (
 )
 
 from ._regex_matcher import _match_node
-from ._regex_count import _search_one_byte_run
+from ._regex_scan import _search_one_byte_run
 
 
 def _is_unbounded_bracket_repeat[
@@ -868,184 +867,6 @@ def _is_numeric_date_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
                                         nodes, nodes[sequence.items[4]], True
                                     ]()
     return False
-
-
-def _is_mariomka_ipv4_literal_branch[
-    nodes: List[RegexNode],
-    node: RegexNode,
-    prefix: StaticString,
-    first_high: Int,
-    suffix_count: Int,
-]() -> Bool:
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == suffix_count + 1:
-            comptime literal_node = nodes[sequence.items[0]]
-            comptime if literal_node.isa[LiteralNode]():
-                comptime literal = literal_node[LiteralNode]
-                comptime if literal.value == prefix:
-                    comptime if _is_exact_bracket_node_range[
-                        ord("0"), first_high, nodes[sequence.items[1]]
-                    ]():
-                        comptime if suffix_count == 1:
-                            return True
-                        return _is_exact_bracket_node_range[
-                            ord("0"), ord("9"), nodes[sequence.items[2]]
-                        ]()
-    return False
-
-
-def _is_mariomka_ipv4_optional_branch[
-    nodes: List[RegexNode], node: RegexNode
-]() -> Bool:
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 3:
-            comptime optional_node = nodes[sequence.items[0]]
-            comptime if optional_node.isa[RepeatNode]():
-                comptime optional = optional_node[RepeatNode]
-                comptime if (
-                    optional.minimum == 0
-                    and optional.maximum == 1
-                    and optional.greedy
-                ):
-                    comptime if _is_exact_bracket_node_range[
-                        ord("0"), ord("1"), nodes[optional.child]
-                    ]():
-                        comptime if _is_exact_bracket_node_range[
-                            ord("0"), ord("9"), nodes[sequence.items[1]]
-                        ]():
-                            return _is_exact_bracket_node_range[
-                                ord("0"), ord("9"), nodes[sequence.items[2]]
-                            ]()
-    return False
-
-
-def _is_mariomka_ipv4_segment[
-    nodes: List[RegexNode], node: RegexNode
-]() -> Bool:
-    """Recognize mariomka's ordered two-or-three-digit IP segment."""
-    comptime if node.isa[OrNode]():
-        comptime alternatives = node[OrNode]
-        comptime if alternatives.count == 3:
-            comptime if _is_mariomka_ipv4_literal_branch[
-                nodes, nodes[alternatives.options[0]], "25", ord("5"), 1
-            ]():
-                comptime if _is_mariomka_ipv4_literal_branch[
-                    nodes, nodes[alternatives.options[1]], "2", ord("4"), 2
-                ]():
-                    return _is_mariomka_ipv4_optional_branch[
-                        nodes, nodes[alternatives.options[2]]
-                    ]()
-    return False
-
-
-def _is_mariomka_ipv4[nodes: List[RegexNode], root: RegexNode]() -> Bool:
-    """Recognize `(ip-segment\\.){3}ip-segment` exactly."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime prefix_node = nodes[sequence.items[0]]
-            comptime if prefix_node.isa[RepeatNode]():
-                comptime prefix = prefix_node[RepeatNode]
-                comptime if prefix.minimum == 3 and prefix.maximum == 3:
-                    comptime pair_node = nodes[prefix.child]
-                    comptime if pair_node.isa[SequenceNode]():
-                        comptime pair = pair_node[SequenceNode]
-                        comptime if pair.count == 2:
-                            comptime delimiter_node = nodes[pair.items[1]]
-                            comptime if delimiter_node.isa[LiteralNode]():
-                                comptime delimiter = delimiter_node[LiteralNode]
-                                comptime if delimiter.value == ".":
-                                    comptime if _is_mariomka_ipv4_segment[
-                                        nodes, nodes[pair.items[0]]
-                                    ]():
-                                        return _is_mariomka_ipv4_segment[
-                                            nodes, nodes[sequence.items[1]]
-                                        ]()
-    return False
-
-
-@always_inline
-def _is_mariomka_ipv4_segment_valid[
-    width: Int
-](text: ImmStringSpan, start: Int) -> Bool:
-    if start + width > text.byte_length():
-        return False
-    var bytes = text.as_bytes()
-    comptime if width == 2:
-        return _is_ascii_digit(Int(bytes[start])) and _is_ascii_digit(
-            Int(bytes[start + 1])
-        )
-    var first = Int(bytes[start])
-    var second = Int(bytes[start + 1])
-    var third = Int(bytes[start + 2])
-    if not _is_ascii_digit(second) or not _is_ascii_digit(third):
-        return False
-    if first == ord("0") or first == ord("1"):
-        return True
-    if first != ord("2"):
-        return False
-    return second < ord("5") or (second == ord("5") and third <= ord("5"))
-
-
-@always_inline
-def _mariomka_ipv4_segment_width[
-    dotted: Bool
-](text: ImmStringSpan, start: Int) -> Int:
-    var bytes = text.as_bytes()
-    var length = text.byte_length()
-    if _is_mariomka_ipv4_segment_valid[3](text, start) and (
-        not dotted or start + 3 < length and Int(bytes[start + 3]) == ord(".")
-    ):
-        return 3
-    if _is_mariomka_ipv4_segment_valid[2](text, start) and (
-        not dotted or start + 2 < length and Int(bytes[start + 2]) == ord(".")
-    ):
-        return 2
-    return 0
-
-
-@always_inline
-def _mariomka_ipv4_suffix_end(text: ImmStringSpan, first_dot: Int) -> Int:
-    var cursor = first_dot + 1
-    for _ in range(2):
-        var width = _mariomka_ipv4_segment_width[True](text, cursor)
-        if width == 0:
-            return -1
-        cursor += width + 1
-    var final_width = _mariomka_ipv4_segment_width[False](text, cursor)
-    if final_width == 0:
-        return -1
-    return cursor + final_width
-
-
-@always_inline
-def _count_mariomka_ipv4[sum_spans: Bool](text: ImmStringSpan) -> Int:
-    """Count IP-shaped matches by searching their first dot delimiter."""
-    var total = 0
-    var next_start = 0
-    var first_dot = text.find(".", 2)
-    while first_dot >= 0:
-        var candidate = -1
-        if first_dot - 3 >= next_start and _is_mariomka_ipv4_segment_valid[3](
-            text, first_dot - 3
-        ):
-            candidate = first_dot - 3
-        elif first_dot - 2 >= next_start and _is_mariomka_ipv4_segment_valid[2](
-            text, first_dot - 2
-        ):
-            candidate = first_dot - 2
-
-        if candidate >= 0:
-            var end = _mariomka_ipv4_suffix_end(text, first_dot)
-            if end >= 0:
-                total += _match_checksum[sum_spans](end - candidate)
-                next_start = end
-                first_dot = text.find(".", end + 2)
-                continue
-        first_dot = text.find(".", first_dot + 1)
-    return total
 
 
 @always_inline

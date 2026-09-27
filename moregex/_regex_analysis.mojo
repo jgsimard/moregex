@@ -24,7 +24,6 @@ from ._ast import (
 )
 from std.algorithm.functional import vectorize
 from std.math import iota
-from std.sys import CompilationTarget, llvm_intrinsic, simd_width_of
 from std.sys.intrinsics import masked_load
 
 from ._regex_common import (
@@ -34,7 +33,12 @@ from ._regex_common import (
     _byte_range_mask,
     _class_mask,
 )
-from ._regex_semantics import _semantic_fixed_width, _semantic_maximum_width
+from ._ast_equal import _same_bracket_ranges
+from ._regex_width import (
+    _semantic_fixed_width,
+    _semantic_maximum_width,
+    _semantic_minimum_width,
+)
 from ._syntax import Regex
 
 
@@ -194,8 +198,7 @@ def _all_captures_mandatory[regex: Regex]() -> Bool:
         return True
     comptime expected = (Int(1) << regex.capture_count) - 1
     return (
-        _mandatory_capture_mask[regex.capture_nodes, regex.capture_root]()
-        == expected
+        _mandatory_capture_mask[regex.nodes, regex.capture_root]() == expected
     )
 
 
@@ -277,7 +280,7 @@ def _constant_capture_participation[
 def _constant_capture_count[regex: Regex]() -> Int:
     """Return the fixed participating-group count including group zero."""
     comptime captures = _constant_capture_participation[
-        regex.capture_nodes, regex.capture_root
+        regex.nodes, regex.capture_root
     ]()
     comptime if captures < 0:
         return -1
@@ -336,51 +339,9 @@ def _bracket_mask[
     return accepted
 
 
-def _minimum_alternation_width[
-    nodes: List[RegexNode], alternation: OrNode, option: Int
-]() -> Int:
-    comptime if option == alternation.count:
-        return 0
-    elif option + 1 == alternation.count:
-        return _minimum_node_width[nodes, alternation.options[option]]()
-    else:
-        return min(
-            _minimum_node_width[nodes, alternation.options[option]](),
-            _minimum_alternation_width[nodes, alternation, option + 1](),
-        )
-
-
-def _minimum_sequence_width[
-    nodes: List[RegexNode], sequence: SequenceNode, item: Int
-]() -> Int:
-    comptime if item == sequence.count:
-        return 0
-    else:
-        return (
-            _minimum_node_width[nodes, sequence.items[item]]()
-            + _minimum_sequence_width[nodes, sequence, item + 1]()
-        )
-
-
 def _minimum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
     """Return the minimum bytes consumed by any successful match."""
-    comptime node = nodes[node_index]
-    comptime if node.isa[EmptyNode]() or node.isa[ZeroWidthNode]():
-        return 0
-    elif node.isa[LiteralNode]():
-        return node[LiteralNode].value.byte_length()
-    elif node.isa[CharClassNode]() or node.isa[BracketClassNode]():
-        return 1
-    elif node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count == 0:
-            return 0
-        return _minimum_alternation_width[nodes, alternation, 0]()
-    elif node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        return repeat.minimum * _minimum_node_width[nodes, repeat.child]()
-    else:
-        return _minimum_sequence_width[nodes, node[SequenceNode], 0]()
+    return comptime (_semantic_minimum_width(nodes, node_index))
 
 
 def _maximum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:
@@ -1001,19 +962,6 @@ def _is_one_byte_class_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
     return node.isa[BracketClassNode]()
 
 
-def _same_bracket_ranges[
-    left: BracketClassNode, right: BracketClassNode
-]() -> Bool:
-    comptime if left.count != right.count:
-        return False
-    comptime for i in range(left.count):
-        comptime if (
-            left.lows[i] != right.lows[i] or left.highs[i] != right.highs[i]
-        ):
-            return False
-    return True
-
-
 def _nodes_are_disjoint[
     nodes: List[RegexNode], left_index: Int, right_index: Int
 ]() -> Bool:
@@ -1051,8 +999,8 @@ def _is_symmetric_bounded_delimited_sequence[
                         and repeat_child.negated
                         and not suffix.negated
                         and repeat.maximum >= 0
-                        and _same_bracket_ranges[prefix, repeat_child]()
-                        and _same_bracket_ranges[prefix, suffix]()
+                        and _same_bracket_ranges(prefix, repeat_child)
+                        and _same_bracket_ranges(prefix, suffix)
                         and _is_one_byte_class_node[nodes, sequence.items[2]]()
                         and _nodes_are_disjoint[
                             nodes, sequence.items[0], sequence.items[2]
@@ -1702,7 +1650,7 @@ def _is_greedy_dot_complement_alternation[
                             and repeat.greedy
                             and terminal.negated
                             and not fallback.negated
-                            and _same_bracket_ranges[terminal, fallback]()
+                            and _same_bracket_ranges(terminal, fallback)
                             and _bracket_accepts[terminal](ord("\n"))
                         )
     return False
@@ -1867,9 +1815,7 @@ def _two_delimiter_bracket_runs_plan[
                         and first_delimiter.value.byte_length() == 1
                         and second_delimiter.value.byte_length() == 1
                         and middle_bracket.negated == right_bracket.negated
-                        and _same_bracket_ranges[
-                            middle_bracket, right_bracket
-                        ]()
+                        and _same_bracket_ranges(middle_bracket, right_bracket)
                     ):
                         return _TwoDelimiterBracketRunsPlan(
                             first_delimiter_index=sequence.items[1],

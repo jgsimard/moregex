@@ -3,7 +3,14 @@
 from std.testing import TestSuite, assert_equal, assert_true
 
 from moregex import Regex, search
-from moregex._regex_nfa import _nfa_find_from, _nfa_full_match, _nfa_search
+from moregex._regex_nfa import (
+    _nfa_find_capture_participation,
+    _nfa_find_captures,
+    _nfa_find_from,
+    _nfa_full_match,
+    _nfa_match_captures_at,
+    _nfa_search,
+)
 
 
 def assert_nfa_search[regex: Regex](text: String, expected: Bool) raises:
@@ -27,7 +34,7 @@ def assert_nfa_find[
     var result = _nfa_find_from[regex](span, 0)
     assert_true(result)
     assert_equal(result.unsafe_value().start, start)
-    assert_equal(result.unsafe_value().consumed, consumed)
+    assert_equal(result.unsafe_value().consumed(), consumed)
 
 
 def test_basic_nfa_search() raises:
@@ -107,6 +114,56 @@ def test_ordered_nfa_execution() raises:
     assert_nfa_full[shared_prefix]("application:12345", True)
     assert_nfa_full[shared_prefix]("applenotvalid:12345", False)
     assert_nfa_full[shared_prefix]("apple:12345\n", False)
+
+
+def test_ordered_nfa_payload_equivalence() raises:
+    """All ordered executor payloads must select the same prioritized match."""
+    comptime captured = Regex("(aa|a)(b)?")
+    var text = "zzaab!"
+    var span = text[byte = 0 : text.byte_length()]
+
+    var plain = _nfa_find_from[captured](span, 0).unsafe_value()
+    var offsets = _nfa_find_captures[captured](span, 0).unsafe_value()
+    var participation = _nfa_find_capture_participation[captured](
+        span, 0
+    ).unsafe_value()
+    var anchored = _nfa_match_captures_at[captured](span, 2).unsafe_value()
+
+    assert_equal(plain.start, 2)
+    assert_equal(plain.end, 5)
+    assert_equal(offsets.starts[0], plain.start)
+    assert_equal(offsets.ends[0], plain.end)
+    assert_equal(offsets.starts[1], 2)
+    assert_equal(offsets.ends[1], 4)
+    assert_equal(offsets.starts[2], 4)
+    assert_equal(offsets.ends[2], 5)
+    assert_equal(participation.span.start, plain.start)
+    assert_equal(participation.span.end, plain.end)
+    assert_equal(participation.groups, UInt64(3))
+    assert_equal(anchored.starts[0], plain.start)
+    assert_equal(anchored.ends[0], plain.end)
+
+    comptime optional = Regex("(aa|a)(b)?")
+    var missing_text = "zzaa!"
+    var missing_span = missing_text[byte = 0 : missing_text.byte_length()]
+    var missing = _nfa_find_captures[optional](missing_span, 0).unsafe_value()
+    var missing_participation = _nfa_find_capture_participation[optional](
+        missing_span, 0
+    ).unsafe_value()
+    assert_equal(missing.starts[2], -1)
+    assert_equal(missing.ends[2], -1)
+    assert_equal(missing_participation.groups, UInt64(1))
+
+    comptime lazy = Regex("(a+?)(a)")
+    var lazy_text = "aaa"
+    var lazy_span = lazy_text[byte = 0 : lazy_text.byte_length()]
+    var lazy_plain = _nfa_find_from[lazy](lazy_span, 0).unsafe_value()
+    var lazy_offsets = _nfa_find_captures[lazy](lazy_span, 0).unsafe_value()
+    assert_equal(lazy_plain.end, 2)
+    assert_equal(lazy_offsets.starts[1], 0)
+    assert_equal(lazy_offsets.ends[1], 1)
+    assert_equal(lazy_offsets.starts[2], 1)
+    assert_equal(lazy_offsets.ends[2], 2)
 
 
 def test_unicode_nfa_execution() raises:

@@ -13,11 +13,11 @@ from std.bit import count_trailing_zeros
 from std.memory import pack_bits
 from std.utils import StaticTuple
 
+from ._regex_masks import _build_bracket_masks
 from ._regex_analysis import _node_start_accepts, _node_start_mask
 from ._regex_common import (
     CLASS_SIMD_WIDTH,
     _bracket_accepts,
-    _build_bracket_masks,
     _match_checksum,
     _match_literal,
 )
@@ -347,20 +347,6 @@ def _utf8_ascii_class_mask[
                 nodes, alternation.options[option], width
             ](values)
     return accepted
-
-
-@always_inline
-def _utf8_sequence_width[
-    nodes: List[RegexNode], node_index: Int
-](bytes: Span[Byte, _], start: Int) -> Int:
-    comptime sequence = nodes[node_index][SequenceNode]
-    if start + sequence.count > len(bytes):
-        return 0
-    comptime for i in range(sequence.count):
-        comptime bracket = nodes[sequence.items[i]][BracketClassNode]
-        if not _bracket_accepts[bracket](Int(bytes[start + i])):
-            return 0
-    return sequence.count
 
 
 def _has_prior_sequence_prefix[
@@ -742,43 +728,6 @@ def _count_exact_utf8_class_sequence[
                 next_start = matched[1]
         offset += 1
     return total
-
-
-@always_inline
-def _find_utf8_class_literal_infix_option[
-    regex: Regex, option_index: Int
-](text: ImmStringSpan, search_start: Int) -> Optional[_Utf8InfixMatch]:
-    comptime sequence = regex.nodes[option_index][SequenceNode]
-    comptime left = regex.nodes[sequence.items[0]][RepeatNode]
-    comptime literal = regex.nodes[sequence.items[1]][LiteralNode]
-    comptime right = regex.nodes[sequence.items[2]][RepeatNode]
-    var bytes = text.as_bytes()
-    var candidate = text.find(literal.value, search_start + 1)
-    while candidate >= 0:
-        var start = candidate
-        var left_count = 0
-        while start > search_start:
-            var width = _previous_utf8_class_width[regex.nodes, left.child](
-                bytes, start, search_start
-            )
-            if width == 0:
-                break
-            start -= width
-            left_count += 1
-        var end = candidate + literal.value.byte_length()
-        var right_count = 0
-        while end < len(bytes):
-            var width = _utf8_byte_class_width[regex.nodes, right.child](
-                bytes, end
-            )
-            if width == 0:
-                break
-            end += width
-            right_count += 1
-        if left_count >= left.minimum and right_count >= right.minimum:
-            return _Utf8InfixMatch(start, end)
-        candidate = text.find(literal.value, candidate + 1)
-    return None
 
 
 @always_inline

@@ -1,4 +1,5 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
+from moregex._regex_runtime import matches_runtime
 
 from moregex import (
     Regex,
@@ -7,7 +8,6 @@ from moregex import (
     count_spans,
     count_spans_span,
     matches,
-    matches_runtime,
     search,
 )
 

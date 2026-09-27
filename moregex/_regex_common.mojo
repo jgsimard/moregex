@@ -5,7 +5,6 @@ from ._ast import (
     ASSERT_INPUT_START,
     ASSERT_LINE_END,
     ASSERT_LINE_START,
-    ASSERT_NON_WORD_BOUNDARY,
     ASSERT_WORD_BOUNDARY,
     CHAR_ASCII_DIGIT,
     CHAR_ASCII_NON_DIGIT,
@@ -23,7 +22,6 @@ from ._ast import (
 from ._syntax import Regex
 from std.memory import MaybeUninit
 from std.sys import simd_width_of, size_of
-from std.utils import StaticTuple
 from std.utils._nicheable import UnsafeSingleNicheable
 
 comptime CLASS_SIMD_WIDTH = simd_width_of[DType.uint8]()
@@ -31,14 +29,6 @@ comptime CLASS_TAIL_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 2)
 comptime CLASS_QUARTER_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 4)
 comptime CLASS_EIGHTH_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 8)
 comptime CLASS_SIXTEENTH_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 16)
-
-
-@always_inline
-def _runtime_bracket_accepts(node: BracketClassNode, value: Int) -> Bool:
-    for item in range(node.count):
-        if node.lows[item] <= value <= node.highs[item]:
-            return not node.negated
-    return node.negated
 
 
 @always_inline
@@ -50,7 +40,7 @@ def _bracket_accepts[node: BracketClassNode](value: Int) -> Bool:
 
 
 def _static_source_is_root_literal[regex: Regex]() -> Bool:
-    """Return whether the original borrowed pattern is the root literal."""
+    """Return whether the original pattern is the root literal."""
     comptime if not regex.has_static_source:
         return False
     comptime root = regex.nodes[regex.root]
@@ -63,16 +53,6 @@ def _static_source_is_root_literal[regex: Regex]() -> Bool:
         comptime if regex.source.as_bytes()[i] != literal.value.as_bytes()[i]:
             return False
     return True
-
-
-@always_inline
-def _build_bracket_masks(node: BracketClassNode) -> StaticTuple[UInt64, 4]:
-    """Compile a bracket class into a 256-bit byte lookup table."""
-    var masks = StaticTuple[UInt64, 4]()
-    for value in range(256):
-        if _runtime_bracket_accepts(node, value):
-            masks[value // 64] |= UInt64(1) << UInt64(value % 64)
-    return masks
 
 
 struct _MatchResult(Copyable, UnsafeSingleNicheable):
@@ -103,13 +83,6 @@ struct _MatchResult(Copyable, UnsafeSingleNicheable):
     @always_inline
     def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
         return memory.unsafe_bitcast[Int]()[] == 0
-
-
-@fieldwise_init
-struct _MatchSpanResult(Copyable):
-    var matched: Bool
-    var start: Int
-    var end: Int
 
 
 @always_inline

@@ -17,7 +17,6 @@ from ._syntax import Regex
 from ._regex_common import (
     _MatchResult,
     _bracket_accepts,
-    _build_bracket_masks,
     _match_class,
     _match_literal,
     _matches_class_run,
@@ -25,6 +24,7 @@ from ._regex_common import (
     _zero_width_matches,
 )
 
+from ._regex_masks import _build_bracket_masks
 from ._regex_analysis import (
     _fixed_node_width,
 )
@@ -198,8 +198,46 @@ def _match_node[
 
 
 @always_inline
+def _matches_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[RepeatNode]():
+        comptime repeat = root[RepeatNode]
+        comptime child = regex.nodes[repeat.child]
+        comptime if (
+            repeat.minimum == 1
+            and repeat.maximum == -1
+            and child.isa[CharClassNode]()
+        ):
+            comptime char_class = child[CharClassNode]
+            comptime if (
+                char_class.kind < CHAR_UNICODE_DOT
+                or char_class.kind > CHAR_UNICODE_DOTALL
+            ):
+                return _matches_class_run[char_class.kind](text)
+    var result = _match_node[regex.nodes, regex.root](text, 0)
+    if result and result.unsafe_value().consumed() == text.byte_length():
+        return True
+    comptime if _nfa_full_semantics_required(regex.nodes, regex.root):
+        return _nfa_full_match[regex](text)
+    return False
+
+
+@always_inline
+def matches_span[regex: Regex](text: ImmStringSpan) -> Bool:
+    """Return whether borrowed text is a full match."""
+    comptime root = regex.nodes[regex.root]
+    comptime if root.isa[LiteralNode]():
+        comptime literal = root[LiteralNode]
+        if text.byte_length() != literal.value.byte_length():
+            return False
+        var result = _match_literal[literal.value](text, 0)
+        return Bool(result)
+    return _matches_span_impl[regex](text)
+
+
+@always_inline
 def matches[regex: Regex](text: String) -> Bool:
-    """Return whether `text` is a full match for compile-time `regex`."""
+    """Return whether text is a full match for a compile-time regex."""
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
         comptime literal = root[LiteralNode]
@@ -219,24 +257,4 @@ def matches[regex: Regex](text: String) -> Bool:
         comptime if _static_source_is_root_literal[regex]():
             return text == regex.source
         return text == literal.value
-    var span = text[byte = 0 : text.byte_length()]
-    comptime if root.isa[RepeatNode]():
-        comptime repeat = root[RepeatNode]
-        comptime child = regex.nodes[repeat.child]
-        comptime if (
-            repeat.minimum == 1
-            and repeat.maximum == -1
-            and child.isa[CharClassNode]()
-        ):
-            comptime char_class = child[CharClassNode]
-            comptime if (
-                char_class.kind < CHAR_UNICODE_DOT
-                or char_class.kind > CHAR_UNICODE_DOTALL
-            ):
-                return _matches_class_run[char_class.kind](span)
-    var result = _match_node[regex.nodes, regex.root](span, 0)
-    if result and result.unsafe_value().consumed() == text.byte_length():
-        return True
-    comptime if _nfa_full_semantics_required(regex.nodes, regex.root):
-        return _nfa_full_match[regex](span)
-    return False
+    return _matches_span_impl[regex](text[byte = 0 : text.byte_length()])

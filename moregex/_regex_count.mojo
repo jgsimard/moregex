@@ -15,13 +15,12 @@ from ._ast import (
 from ._syntax import Regex
 from std.bit import count_trailing_zeros
 from std.memory import pack_bits
-from std.sys import CompilationTarget, llvm_intrinsic, simd_width_of
 from std.utils import StaticTuple
 
+from ._ast_equal import _same_bracket_ranges
 from ._regex_common import (
     CLASS_SIMD_WIDTH,
     CLASS_TAIL_SIMD_WIDTH,
-    _MatchSpanResult,
     _accepts_class,
     _bracket_accepts,
     _byte_range_mask,
@@ -53,10 +52,15 @@ from ._regex_analysis import (
     _node_start_accepts,
     _node_start_mask,
     _one_byte_atom_accepts,
-    _same_bracket_ranges,
     _sequence_prefix_literal_index,
 )
 
+from ._regex_scan import (
+    _contains_one_byte_node,
+    _search_one_byte_run,
+)
+
+from ._regex_result import _MatchSpan
 from ._regex_matcher import (
     _match_sequence_from,
     _match_node,
@@ -528,10 +532,10 @@ def _count_end_anchored_fixed[
 @always_inline
 def _match_simple_prefix_to[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
-](text: ImmStringSpan, end: Int, minimum_start: Int) -> _MatchSpanResult:
+](text: ImmStringSpan, end: Int, minimum_start: Int) -> Optional[_MatchSpan]:
     """Match a one-byte sequence prefix backwards with repeat giveback."""
     comptime if item < 0:
-        return _MatchSpanResult(True, end, end)
+        return _MatchSpan(end, end)
     else:
         comptime node_index = sequence.items[item]
         comptime node = nodes[node_index]
@@ -594,16 +598,16 @@ def _match_simple_prefix_to[
                 var prefix = _match_simple_prefix_to[nodes, sequence, item - 1](
                     text, start, minimum_start
                 )
-                if prefix.matched:
+                if prefix:
                     return prefix^
                 start += 1
                 count -= 1
-            return _MatchSpanResult(False, 0, 0)
+            return None
         elif _is_one_byte_class_node[nodes, node_index]():
             if end <= minimum_start or not _one_byte_atom_accepts[
                 nodes, node_index
             ](Int(text.as_bytes()[end - 1])):
-                return _MatchSpanResult(False, 0, 0)
+                return None
             return _match_simple_prefix_to[nodes, sequence, item - 1](
                 text, end - 1, minimum_start
             )
@@ -614,13 +618,13 @@ def _match_simple_prefix_to[
             if start < minimum_start or not _match_literal[literal.value](
                 text, start
             ):
-                return _MatchSpanResult(False, 0, 0)
+                return None
             return _match_simple_prefix_to[nodes, sequence, item - 1](
                 text, start, minimum_start
             )
         elif node.isa[ZeroWidthNode]():
             if not _zero_width_matches(node[ZeroWidthNode].kind, text, end):
-                return _MatchSpanResult(False, 0, 0)
+                return None
             return _match_simple_prefix_to[nodes, sequence, item - 1](
                 text, end, minimum_start
             )
@@ -652,13 +656,15 @@ def _simple_anchor_is_disjoint[
 @always_inline
 def _match_simple_infix_at[
     regex: Regex, literal_item: Int
-](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> _MatchSpanResult:
+](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> Optional[
+    _MatchSpan
+]:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     var prefix = _match_simple_prefix_to[
         regex.nodes, sequence, literal_item - 1
     ](text, candidate, minimum_start)
-    if not prefix.matched:
-        return _MatchSpanResult(False, 0, 0)
+    if not prefix:
+        return None
     comptime if _simple_anchor_is_disjoint[
         regex.nodes, sequence, literal_item
     ]():
@@ -666,19 +672,19 @@ def _match_simple_infix_at[
             text, candidate
         )
         if not suffix:
-            return _MatchSpanResult(False, 0, 0)
-        return _MatchSpanResult(
-            True, prefix.start, candidate + suffix.unsafe_value().consumed()
+            return None
+        var span = prefix.unsafe_value()
+        return _MatchSpan(
+            span.start, candidate + suffix.unsafe_value().consumed()
         )
     # The prefix can greedily cross an earlier occurrence of the required
     # literal. Re-evaluate from the discovered leftmost start so forward
     # greedy semantics choose the correct occurrence and total span.
-    var result = _match_node[regex.nodes, regex.root](text, prefix.start)
+    var span = prefix.unsafe_value()
+    var result = _match_node[regex.nodes, regex.root](text, span.start)
     if not result:
-        return _MatchSpanResult(False, 0, 0)
-    return _MatchSpanResult(
-        True, prefix.start, prefix.start + result.unsafe_value().consumed()
-    )
+        return None
+    return _MatchSpan(span.start, span.start + result.unsafe_value().consumed())
 
 
 @always_inline
@@ -694,9 +700,10 @@ def _count_simple_infix[
         var result = _match_simple_infix_at[regex, literal_item](
             text, candidate, minimum_start
         )
-        if result.matched:
-            total += _match_checksum[sum_spans](result.end - result.start)
-            minimum_start = max(result.end, result.start + 1)
+        if result:
+            var span = result.unsafe_value()
+            total += _match_checksum[sum_spans](span.consumed())
+            minimum_start = max(span.end, span.start + 1)
             candidate = text.find(literal.value, minimum_start)
         else:
             candidate = text.find(literal.value, candidate + 1)
@@ -750,9 +757,7 @@ def _search_simple_infix[
     comptime literal = regex.nodes[sequence.items[literal_item]][LiteralNode]
     var candidate = text.find(literal.value)
     while candidate >= 0:
-        if _match_simple_infix_at[regex, literal_item](
-            text, candidate, 0
-        ).matched:
+        if _match_simple_infix_at[regex, literal_item](text, candidate, 0):
             return True
         candidate = text.find(literal.value, candidate + 1)
     return False
@@ -761,19 +766,20 @@ def _search_simple_infix[
 @always_inline
 def _match_simple_class_anchor_at[
     regex: Regex, class_item: Int
-](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> _MatchSpanResult:
+](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> Optional[
+    _MatchSpan
+]:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     var prefix = _match_simple_prefix_to[regex.nodes, sequence, class_item - 1](
         text, candidate, minimum_start
     )
-    if not prefix.matched:
-        return _MatchSpanResult(False, 0, 0)
-    var result = _match_node[regex.nodes, regex.root](text, prefix.start)
+    if not prefix:
+        return None
+    var span = prefix.unsafe_value()
+    var result = _match_node[regex.nodes, regex.root](text, span.start)
     if not result:
-        return _MatchSpanResult(False, 0, 0)
-    return _MatchSpanResult(
-        True, prefix.start, prefix.start + result.unsafe_value().consumed()
-    )
+        return None
+    return _MatchSpan(span.start, span.start + result.unsafe_value().consumed())
 
 
 @always_inline
@@ -787,13 +793,10 @@ def _search_simple_class_anchor[
     def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
         comptime if width == 0:
             for candidate in range(start, end):
-                if (
-                    _node_start_accepts[regex.nodes, class_index](
-                        Int(text.as_bytes()[candidate])
-                    )
-                    and _match_simple_class_anchor_at[regex, class_item](
-                        text, candidate, 0
-                    ).matched
+                if _node_start_accepts[regex.nodes, class_index](
+                    Int(text.as_bytes()[candidate])
+                ) and _match_simple_class_anchor_at[regex, class_item](
+                    text, candidate, 0
                 ):
                     return True
             return False
@@ -809,7 +812,7 @@ def _search_simple_class_anchor[
                 pending &= pending - 1
                 if _match_simple_class_anchor_at[regex, class_item](
                     text, start + lane, 0
-                ).matched:
+                ):
                     return True
             return False
 
@@ -843,11 +846,10 @@ def _count_simple_class_anchor[
                 var result = _match_simple_class_anchor_at[regex, class_item](
                     text, candidate, next_start
                 )
-                if result.matched:
-                    total += _match_checksum[sum_spans](
-                        result.end - result.start
-                    )
-                    next_start = max(result.end, result.start + 1)
+                if result:
+                    var span = result.unsafe_value()
+                    total += _match_checksum[sum_spans](span.consumed())
+                    next_start = max(span.end, span.start + 1)
         return False
 
     var offset = 0
@@ -859,9 +861,10 @@ def _count_simple_class_anchor[
             var result = _match_simple_class_anchor_at[regex, class_item](
                 text, offset, next_start
             )
-            if result.matched:
-                total += _match_checksum[sum_spans](result.end - result.start)
-                next_start = max(result.end, result.start + 1)
+            if result:
+                var span = result.unsafe_value()
+                total += _match_checksum[sum_spans](span.consumed())
+                next_start = max(span.end, span.start + 1)
         offset += 1
     return total
 
@@ -1151,32 +1154,6 @@ def _count_bounded_capitalized_word_sequence[
 
 
 @always_inline
-def _contains_one_byte_node[
-    nodes: List[RegexNode], node_index: Int
-](text: ImmStringSpan) -> Bool:
-    """Return whether a byte class occurs, using the native SIMD width."""
-    var length = text.byte_length()
-    var offset = 0
-
-    @always_inline
-    def scan[width: Int](block_start: Int) {imm text} -> Bool:
-        return any(
-            _fixed_node_mask[nodes, node_index, width, 0](text, block_start)
-        )
-
-    if _consume_simd_width_ladder(length, offset, scan):
-        return True
-
-    while offset < length:
-        if _one_byte_atom_accepts[nodes, node_index](
-            Int(text.as_bytes()[offset])
-        ):
-            return True
-        offset += 1
-    return False
-
-
-@always_inline
 def _bounded_class_run_checksum[
     minimum: Int, maximum: Int, greedy: Bool, sum_spans: Bool
 ](run_length: Int) -> Int:
@@ -1258,49 +1235,6 @@ def _count_one_byte_class_repeat[
     return total + _bounded_class_run_checksum[
         minimum, maximum, repeat.greedy, sum_spans
     ](run_length)
-
-
-@always_inline
-def _search_one_byte_run[
-    nodes: List[RegexNode], child: Int, minimum: Int
-](text: ImmStringSpan) -> Bool:
-    """Search for `minimum` consecutive bytes accepted by one AST node."""
-    comptime width = CLASS_TAIL_SIMD_WIDTH
-    var length = text.byte_length()
-    if length < minimum:
-        return False
-
-    var offset = 0
-    comptime if minimum <= width:
-        while offset + width + minimum - 1 <= length:
-            var candidates = _fixed_node_mask[nodes, child, width, 0](
-                text, offset
-            )
-            comptime for shift in range(1, minimum):
-                candidates &= _fixed_node_mask[nodes, child, width, shift](
-                    text, offset
-                )
-            if any(candidates):
-                return True
-            offset += width
-
-    # For large minima and the tail, a rejected byte skips every candidate
-    # window containing it.  This remains linear without a per-start matcher.
-    var bytes = text.as_bytes()
-    var window_end = offset + minimum - 1
-    while window_end < length:
-        var window_start = window_end - minimum + 1
-        var cursor = window_end
-        while cursor >= window_start:
-            if not _bounded_repeat_byte_accepts[nodes, child](
-                Int(bytes[cursor])
-            ):
-                break
-            cursor -= 1
-        if cursor < window_start:
-            return True
-        window_end = cursor + minimum
-    return False
 
 
 @always_inline
@@ -1449,7 +1383,7 @@ def _class_literal_alternation_common_prefix[
         comptime prefix = prefix_node[BracketClassNode]
         comptime if (
             first.negated != prefix.negated
-            or not _same_bracket_ranges[first, prefix]()
+            or not _same_bracket_ranges(first, prefix)
         ):
             return -1
     return first_index
@@ -1714,7 +1648,7 @@ def _prefixed_alternation_match_length[
         return _bounded_line_gap_alternation_match_length[regex](text, start)
     comptime if use_nfa:
         var result = _nfa_match_at[regex](text, start)
-        return result.unsafe_value().consumed if result else -1
+        return result.unsafe_value().consumed() if result else -1
     else:
         var result = _match_node[regex.nodes, regex.root](text, start)
         return result.unsafe_value().consumed() if result else -1

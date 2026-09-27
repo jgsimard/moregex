@@ -10,7 +10,7 @@ from ._ast import (
 )
 from std.bit import count_trailing_zeros
 from std.memory import pack_bits
-from std.sys import CompilationTarget, llvm_intrinsic, simd_width_of
+from std.sys import CompilationTarget, llvm_intrinsic
 from std.utils import StaticTuple
 
 from ._regex_common import (

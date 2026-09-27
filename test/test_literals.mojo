@@ -1,6 +1,7 @@
 from std.testing import TestSuite, assert_false, assert_true
+from moregex._regex_runtime import matches_runtime
 
-from moregex import Regex, matches, matches_runtime
+from moregex import Regex, matches
 
 
 def test_literals() raises:

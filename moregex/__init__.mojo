@@ -1,15 +1,28 @@
 from .regex import (
     Regex,
     count,
+    count_captures,
     count_captures_span,
+    count_line_captures,
+    count_matching_lines,
     count_span,
     count_spans,
     count_spans_span,
     grep,
     grep_captures,
+    matched_bytes,
+    matched_bytes_span,
     matches,
-    matches_runtime,
+    matches_span,
     search,
     search_span,
 )
-from ._regex_find import RegexMatch, find, find_span, finditer, finditer_span
+from ._regex_find import (
+    RegexMatch,
+    find,
+    find_span,
+    findall,
+    findall_span,
+    finditer,
+    finditer_span,
+)

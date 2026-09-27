@@ -10,14 +10,10 @@ from ._ast import (
     SequenceNode,
 )
 from ._syntax import Regex
-from std.bit import count_trailing_zeros
-from std.memory import pack_bits
 
 from ._regex_common import (
     CLASS_TAIL_SIMD_WIDTH,
-    _consume_simd_width_ladder,
     _match_checksum,
-    _search_simd_width_ladder,
     _static_source_is_root_literal,
 )
 
@@ -29,10 +25,7 @@ from ._regex_analysis import (
     _all_literal_options,
     _all_prefixed_sequence_options,
     _count_unicode_dot,
-    _end_anchored_fixed_width,
     _fixed_node_width,
-    _maximum_node_width,
-    _has_generic_backtracking_risk,
     _is_adjacent_dot_stars_around_literal,
     _is_anchored_prefix_delimited_line,
     _is_bounded_capitalized_word_sequence,
@@ -46,7 +39,6 @@ from ._regex_analysis import (
     _is_one_byte_class_node,
     _is_repeated_lazy_dot_delimiter_suffix,
     _is_reverse_suffix_class_sequence,
-    _is_end_anchored,
     _is_start_anchored,
     _is_symmetric_bounded_delimited_sequence,
     _is_unicode_dotall_plus,
@@ -54,22 +46,12 @@ from ._regex_analysis import (
     _leading_repeat_literal_item,
     _line_prefix_run_literal_plan,
     _literal_bytes_all_accepted_by_node,
-    _minimum_node_width,
-    _node_start_accepts,
-    _node_start_mask,
     _prefixed_nested_dot_literal_index,
-    _required_literal_index,
-    _required_one_byte_node_index,
-    _simple_infix_literal_item_for_root,
-    _simple_class_anchor_item_for_root,
-    _start_filter_is_selective,
     _two_delimiter_bracket_runs_plan,
     _unicode_dot_kind,
 )
 from ._regex_find import (
-    _count_ascii_bible_reference_captures,
     _has_leading_literal_prefilter,
-    _is_ascii_bible_reference_capture_pattern,
     _is_anchored_lazy_capture_record,
     _is_delimited_capture_record,
     _is_delimited_capture_record_with_optional_tail,
@@ -82,6 +64,7 @@ from ._regex_find import (
 from ._regex_matcher import (
     _match_node,
     matches,
+    matches_span,
 )
 from ._regex_nfa import (
     _nfa_find_capture_participation,
@@ -89,12 +72,6 @@ from ._regex_nfa import (
     _nfa_match_at,
     _nfa_search_from,
 )
-from ._regex_semantics import (
-    _nfa_node_supported,
-    _nfa_partial_semantics_required,
-)
-from ._regex_runtime import matches_runtime
-
 from ._regex_count import (
     _count_anchored_lazy_literal_lines,
     _count_adjacent_dot_stars_around_literal,
@@ -107,7 +84,6 @@ from ._regex_count import (
     _count_fixed_width_prefiltered,
     _count_greedy_dot_complement_alternation,
     _count_greedy_run_literal_suffix,
-    _contains_one_byte_node,
     _count_leading_class_literal,
     _count_line_prefix_run_literal,
     _count_multiline_literal_edge_alternation,
@@ -138,16 +114,15 @@ from ._regex_count_literal import (
     _literal_unique_high_byte_offset,
     _search_static_literal,
 )
+from ._regex_scan import _scan_generic
 from ._regex_search import (
     _all_infix_options,
     _count_long_word,
-    _count_mariomka_ipv4,
     _count_word_boundary_wrapped,
     _count_word_run_literal_suffix,
     _is_bracket_infix_search,
     _is_long_word_search,
     _is_literal_dot_infix,
-    _is_mariomka_ipv4,
     _is_numeric_date_search,
     _is_prefixed_infix_search,
     _is_word_boundary_wrapped,
@@ -166,6 +141,15 @@ from ._regex_literals import (
     _count_literal_alternation,
     _search_literal_alternation,
 )
+from ._regex_plan import _execution_plan
+from ._regex_tuning import (
+    DELIMITED_REPEAT_PLAN_MINIMUM,
+    GREEDY_RUN_SUFFIX_HAYSTACK_BYTES,
+    LARGE_LITERAL_HAYSTACK_BYTES,
+    REVERSE_LITERAL_MIN_BYTES,
+    SHORT_LITERAL_MAX_BYTES,
+    SHORT_LITERAL_MIN_BYTES,
+)
 from ._regex_utf8_runs import (
     _count_exact_utf8_class_sequence,
     _count_utf8_byte_class_repeat,
@@ -179,31 +163,14 @@ from ._regex_utf8_runs import (
 
 
 @always_inline
-def _anchored_width_rejects[regex: Regex](length: Int) -> Bool:
-    comptime if _is_start_anchored[
-        regex.nodes, regex.root
-    ]() and _is_end_anchored[regex.nodes, regex.root]():
-        comptime maximum = _maximum_node_width[regex.nodes, regex.root]()
-        comptime if maximum >= 0:
-            return length > maximum + 1
-    return False
-
-
-@always_inline
 def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
         comptime if _static_source_is_root_literal[regex]():
             return _search_static_literal[regex.source](text)
         return text.find(root[LiteralNode].value) >= 0
-    comptime minimum_width = _minimum_node_width[regex.nodes, regex.root]()
-    comptime selective_start = (
-        minimum_width > 0
-        and _start_filter_is_selective[regex.nodes, regex.root]()
-    )
-    if minimum_width > text.byte_length():
-        return False
-    if _anchored_width_rejects[regex](text.byte_length()):
+    comptime plan = _execution_plan[regex]()
+    if plan.rejects_length(text.byte_length()):
         return False
     comptime if _is_exact_utf8_class_sequence[regex.nodes, regex.root]():
         return (
@@ -211,13 +178,12 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         )
     comptime if _is_literal_dot_infix[regex.nodes, root]():
         return _search_literal_dot_infix[regex.nodes, root](text)
-    comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
+    comptime if plan.requires_ordered_nfa:
         # An exact leading literal identifies complete match starts. Avoid
         # keeping an unanchored NFA active at every byte when those starts are
         # sparse; run the ordered automaton only at literal candidates.
         comptime if (
-            not _is_start_anchored[regex.nodes, regex.root]()
-            and _has_leading_literal_prefilter[regex]()
+            not plan.start_anchored and _has_leading_literal_prefilter[regex]()
         ):
             var candidate = _prefilter_start[regex](text, 0)
             if candidate < 0:
@@ -229,7 +195,7 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
             # linear unanchored executor immediately after it.
             return _nfa_search_from[regex](text, candidate + 1)
         return _nfa_search_from[regex](text, 0)
-    comptime if _is_start_anchored[regex.nodes, regex.root]():
+    comptime if plan.start_anchored:
         return Bool(_match_node[regex.nodes, regex.root](text, 0))
     comptime if _is_multiline_whole_line[regex.nodes, regex.root]():
         return True
@@ -286,90 +252,17 @@ def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
         return _search_numeric_date[regex.nodes, root](text)
     comptime if _is_bracket_infix_search[regex.nodes, root]():
         return _search_bracket_infix[regex.nodes, root](text)
-    comptime required_literal = _required_literal_index[
-        regex.nodes, regex.root
-    ]()
-    comptime if required_literal < 0 and _is_word_boundary_wrapped[
+    comptime if plan.required_literal_index < 0 and _is_word_boundary_wrapped[
         regex.nodes, root
     ]():
         return _search_word_boundary_wrapped[regex](text)
-    comptime fixed_width = _fixed_node_width[regex.nodes, regex.root]()
-    comptime if fixed_width > 0:
-        return _search_fixed_width_prefiltered[regex, fixed_width](text)
-    comptime simple_infix_item = _simple_infix_literal_item_for_root[
-        regex.nodes, regex.root
-    ]()
-    comptime if simple_infix_item >= 0:
-        return _search_simple_infix[regex, simple_infix_item](text)
-    comptime simple_class_item = _simple_class_anchor_item_for_root[
-        regex.nodes, regex.root
-    ]()
-    comptime if simple_class_item >= 0:
-        return _search_simple_class_anchor[regex, simple_class_item](text)
-    # Anchor-driven plans perform their own required-atom scan.  Keep the
-    # standalone rejection after them so positive inputs are not scanned twice.
-    comptime if required_literal >= 0:
-        comptime literal = regex.nodes[required_literal][LiteralNode]
-        comptime if not selective_start or literal.value.byte_length() == 1:
-            if text.find(literal.value) < 0:
-                return False
-    comptime backtracking_risk = _has_generic_backtracking_risk[
-        regex.nodes, regex.root
-    ]()
-    comptime required_byte_node = _required_one_byte_node_index[
-        regex.nodes, regex.root
-    ]()
-    comptime if (
-        required_literal < 0 and backtracking_risk and required_byte_node >= 0
-    ):
-        if not _contains_one_byte_node[regex.nodes, required_byte_node](text):
-            return False
-    comptime if (
-        minimum_width > 0
-        and required_literal < 0
-        and backtracking_risk
-        and _nfa_node_supported(regex.nodes, regex.root)
-    ):
-        # Preserve the recursive matcher's excellent hit latency, then cap the
-        # remaining search with a linear-time automaton.
-        var probe_end = min(1, text.byte_length() - minimum_width + 1)
-        for start in range(probe_end):
-            if _match_node[regex.nodes, regex.root](text, start):
-                return True
-        return _nfa_search_from[regex](text, probe_end)
-    comptime if selective_start:
-        var candidate_count = text.byte_length() - minimum_width + 1
-
-        @always_inline
-        def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
-            comptime if width == 0:
-                for candidate in range(start, end):
-                    if _node_start_accepts[regex.nodes, regex.root](
-                        Int(text.as_bytes()[candidate])
-                    ) and _match_node[regex.nodes, regex.root](text, candidate):
-                        return True
-                return False
-            else:
-                var values = text.unsafe_ptr().unsafe_load[
-                    width=width, alignment=1
-                ](start)
-                var pending = pack_bits(
-                    _node_start_mask[regex.nodes, regex.root, width](values)
-                )
-                while pending != 0:
-                    var lane = Int(count_trailing_zeros(pending))
-                    pending &= pending - 1
-                    if _match_node[regex.nodes, regex.root](text, start + lane):
-                        return True
-                return False
-
-        return _search_simd_width_ladder(candidate_count, 0, scan)
-    else:
-        var end = text.byte_length() - minimum_width + 1
-        for start in range(end):
-            if _match_node[regex.nodes, regex.root](text, start):
-                return True
-    return False
+    comptime if plan.fixed_width > 0:
+        return _search_fixed_width_prefiltered[regex, plan.fixed_width](text)
+    comptime if plan.simple_infix_item >= 0:
+        return _search_simple_infix[regex, plan.simple_infix_item](text)
+    comptime if plan.simple_class_item >= 0:
+        return _search_simple_class_anchor[regex, plan.simple_class_item](text)
+    return _scan_generic[regex, False, True](text) > 0
 
 
 @always_inline
@@ -416,8 +309,8 @@ def _count_nfa[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         if not result:
             break
         var found = result.unsafe_value()
-        total += _match_checksum[sum_spans](found.consumed)
-        search_start = found.start + max(1, found.consumed)
+        total += _match_checksum[sum_spans](found.consumed())
+        search_start = found.start + max(1, found.consumed())
     return total
 
 
@@ -485,10 +378,6 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         comptime if sum_spans:
             return text.byte_length()
         return 1 if text.byte_length() == 0 else 2
-    # Keep the detailed IPv4 shape check out of unrelated instantiations.
-    comptime if len(regex.nodes) == 30:
-        comptime if _is_mariomka_ipv4[regex.nodes, root]():
-            return _count_mariomka_ipv4[sum_spans](text)
     comptime nested_dot_literal = _prefixed_nested_dot_literal_index[
         regex.nodes, regex.root
     ]()
@@ -569,7 +458,7 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         comptime delimited_repeat = regex.nodes[delimited_sequence.items[1]][
             RepeatNode
         ]
-        comptime if delimited_repeat.maximum >= 8:
+        comptime if delimited_repeat.maximum >= DELIMITED_REPEAT_PLAN_MINIMUM:
             return _count_bracket_prefixed_sequence[regex, sum_spans](text)
     comptime if _is_repeated_lazy_dot_delimiter_suffix[
         regex.nodes, regex.root
@@ -597,7 +486,7 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
                 regex.nodes, repeat.child, literal.value, 0
             ]()
         ):
-            if text.byte_length() >= 65536:
+            if text.byte_length() >= GREEDY_RUN_SUFFIX_HAYSTACK_BYTES:
                 return _count_greedy_run_literal_suffix[regex, sum_spans](text)
     comptime leading_literal = _leading_repeat_literal_item[
         regex.nodes, regex.root
@@ -612,129 +501,37 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
         comptime reverse_literal = regex.nodes[reverse_sequence.items[1]][
             LiteralNode
         ]
-        comptime if reverse_literal.value.byte_length() >= 8:
+        comptime if reverse_literal.value.byte_length() >= REVERSE_LITERAL_MIN_BYTES:
             return _count_reverse_suffix_class[regex, sum_spans](text)
-    comptime minimum_width = _minimum_node_width[regex.nodes, regex.root]()
-    comptime selective_start = (
-        minimum_width > 0
-        and _start_filter_is_selective[regex.nodes, regex.root]()
-    )
-    if minimum_width > text.byte_length():
+    comptime plan = _execution_plan[regex]()
+    if plan.rejects_length(text.byte_length()):
         return 0
-    if _anchored_width_rejects[regex](text.byte_length()):
-        return 0
-    comptime if _nfa_partial_semantics_required(regex.nodes, regex.root):
+    comptime if plan.requires_ordered_nfa:
         return _count_nfa[regex, sum_spans](text)
-    comptime if _is_start_anchored[regex.nodes, regex.root]():
+    comptime if plan.start_anchored:
         var anchored = _match_node[regex.nodes, regex.root](text, 0)
         if anchored:
             return _match_checksum[sum_spans](
                 anchored.unsafe_value().consumed()
             )
         return 0
-    comptime end_anchored_width = _end_anchored_fixed_width[
-        regex.nodes, regex.root
-    ]()
-    comptime if end_anchored_width >= 0:
-        return _count_end_anchored_fixed[regex, end_anchored_width, sum_spans](
+    comptime if plan.end_anchored_width >= 0:
+        return _count_end_anchored_fixed[
+            regex, plan.end_anchored_width, sum_spans
+        ](text)
+    comptime if plan.fixed_width > 0:
+        return _count_fixed_width_prefiltered[
+            regex, plan.fixed_width, sum_spans
+        ](text)
+    comptime if plan.simple_infix_item >= 0:
+        return _count_simple_infix[regex, plan.simple_infix_item, sum_spans](
             text
         )
-    comptime required_literal = _required_literal_index[
-        regex.nodes, regex.root
-    ]()
-    comptime fixed_width = _fixed_node_width[regex.nodes, regex.root]()
-    comptime if fixed_width > 0:
-        return _count_fixed_width_prefiltered[regex, fixed_width, sum_spans](
-            text
-        )
-    comptime simple_infix_item = _simple_infix_literal_item_for_root[
-        regex.nodes, regex.root
-    ]()
-    comptime if simple_infix_item >= 0:
-        return _count_simple_infix[regex, simple_infix_item, sum_spans](text)
-    comptime simple_class_item = _simple_class_anchor_item_for_root[
-        regex.nodes, regex.root
-    ]()
-    comptime if simple_class_item >= 0:
-        return _count_simple_class_anchor[regex, simple_class_item, sum_spans](
-            text
-        )
-    comptime if required_literal >= 0:
-        comptime literal = regex.nodes[required_literal][LiteralNode]
-        comptime if not selective_start or literal.value.byte_length() == 1:
-            if text.find(literal.value) < 0:
-                return 0
-    comptime backtracking_risk = _has_generic_backtracking_risk[
-        regex.nodes, regex.root
-    ]()
-    comptime required_byte_node = _required_one_byte_node_index[
-        regex.nodes, regex.root
-    ]()
-    comptime if (
-        required_literal < 0 and backtracking_risk and required_byte_node >= 0
-    ):
-        if not _contains_one_byte_node[regex.nodes, required_byte_node](text):
-            return 0
-    comptime if (
-        minimum_width > 0
-        and required_literal < 0
-        and backtracking_risk
-        and _nfa_node_supported(regex.nodes, regex.root)
-    ):
-        var first = _match_node[regex.nodes, regex.root](text, 0)
-        if not first and not _nfa_search_from[regex](text, 1):
-            return 0
-    var total = 0
-    var start = 0
-    var end = text.byte_length() - minimum_width + 1
-    comptime if selective_start:
-
-        @always_inline
-        def scan[
-            width: Int
-        ](block_start: Int) {imm text, mut total, mut start,} -> Bool:
-            var values = text.unsafe_ptr().unsafe_load[
-                width=width, alignment=1
-            ](block_start)
-            var pending = pack_bits(
-                _node_start_mask[regex.nodes, regex.root, width](values)
-            )
-            while pending != 0:
-                var lane = Int(count_trailing_zeros(pending))
-                pending &= pending - 1
-                var candidate = block_start + lane
-                if candidate >= start:
-                    var result = _match_node[regex.nodes, regex.root](
-                        text, candidate
-                    )
-                    if result:
-                        var consumed = result.unsafe_value().consumed()
-                        total += _match_checksum[sum_spans](consumed)
-                        start = candidate + max(1, consumed)
-            return False
-
-        var offset = 0
-        _ = _consume_simd_width_ladder(end, offset, scan)
-        while offset < end:
-            if offset >= start and _node_start_accepts[regex.nodes, regex.root](
-                Int(text.as_bytes()[offset])
-            ):
-                var result = _match_node[regex.nodes, regex.root](text, offset)
-                if result:
-                    var consumed = result.unsafe_value().consumed()
-                    total += _match_checksum[sum_spans](consumed)
-                    start = offset + max(1, consumed)
-            offset += 1
-    else:
-        while start < end:
-            var result = _match_node[regex.nodes, regex.root](text, start)
-            if result:
-                var consumed = result.unsafe_value().consumed()
-                total += _match_checksum[sum_spans](consumed)
-                start += max(1, consumed)
-            else:
-                start += 1
-    return total
+    comptime if plan.simple_class_item >= 0:
+        return _count_simple_class_anchor[
+            regex, plan.simple_class_item, sum_spans
+        ](text)
+    return _scan_generic[regex, sum_spans, False](text)
 
 
 @always_inline
@@ -751,7 +548,7 @@ def _count_literal_root[
         return _count_one_byte_atom[regex](text)
     comptime unique_first = _literal_has_unique_first_byte[literal.value]()
     comptime if (
-        16 <= literal_length <= 32
+        SHORT_LITERAL_MIN_BYTES <= literal_length <= SHORT_LITERAL_MAX_BYTES
         and unique_first
         and _static_source_is_root_literal[regex]()
     ):
@@ -766,17 +563,17 @@ def _count_literal_root[
             ](text)
     comptime high_anchor = _literal_unique_high_byte_offset[literal.value]()
     comptime if high_anchor >= 0:
-        if text.byte_length() >= 4096:
+        if text.byte_length() >= LARGE_LITERAL_HAYSTACK_BYTES:
             return _count_unique_anchor_literal[
                 literal.value, high_anchor, sum_spans
             ](text)
-    comptime if literal_length >= 16 and unique_first:
-        if text.byte_length() >= 4096:
+    comptime if literal_length >= SHORT_LITERAL_MIN_BYTES and unique_first:
+        if text.byte_length() >= LARGE_LITERAL_HAYSTACK_BYTES:
             return _count_reverse_unbordered_literal[literal.value, sum_spans](
                 text
             )
     comptime if literal_length >= 2:
-        if text.byte_length() >= 4096:
+        if text.byte_length() >= LARGE_LITERAL_HAYSTACK_BYTES:
             return _count_edge_prefiltered_literal[literal.value, sum_spans](
                 text
             )
@@ -846,6 +643,18 @@ def count_spans_span[regex: Regex](text: ImmStringSpan) -> Int:
 
 
 @always_inline
+def matched_bytes[regex: Regex](text: String) -> Int:
+    """Sum byte lengths of leftmost, non-overlapping matches."""
+    return count_spans[regex](text)
+
+
+@always_inline
+def matched_bytes_span[regex: Regex](text: ImmStringSpan) -> Int:
+    """Borrowed-input version of matched_bytes."""
+    return count_spans_span[regex](text)
+
+
+@always_inline
 def count[regex: Regex](text: String) -> Int:
     """Count leftmost, non-overlapping matches in `text`."""
     return _count_impl[regex, False](text[byte = 0 : text.byte_length()])
@@ -860,8 +669,6 @@ def count_span[regex: Regex](text: ImmStringSpan) -> Int:
 @always_inline
 def count_captures_span[regex: Regex](text: ImmStringSpan) raises -> Int:
     """Count participating groups in all non-overlapping matches."""
-    comptime if _is_ascii_bible_reference_capture_pattern[regex]():
-        return _count_ascii_bible_reference_captures(text)
     comptime if _is_anchored_lazy_capture_record[regex]():
         return (
             regex.capture_count
@@ -908,33 +715,19 @@ def count_captures_span[regex: Regex](text: ImmStringSpan) raises -> Int:
             groups &= groups - 1
             total += 1
         # Capture-count models guarantee non-empty matches.
-        search_start = found.end
+        search_start = found.span.end
     return total
 
 
-def _replace_all_nonempty[
-    regex: Regex
-](text: String, replacement: String) raises -> String:
-    """Replace non-empty compile-time regex matches with a literal string."""
-    comptime assert _minimum_node_width[regex.nodes, regex.root]() > 0
-    var result = String(capacity_bytes=text.byte_length())
-    var start = 0
-    var span = text[byte = 0 : text.byte_length()]
-    while start <= text.byte_length():
-        var found = find_span[regex](span, start)
-        if not found:
-            break
-        var matched = found.unsafe_value()
-        result += span[byte = start : matched.start()]
-        result += replacement
-        start = matched.end()
-    result += span[byte = start : text.byte_length()]
-    return result^
+@always_inline
+def count_captures[regex: Regex](text: String) raises -> Int:
+    """Count participating groups in all non-overlapping matches."""
+    return count_captures_span[regex](text[byte = 0 : text.byte_length()])
 
 
 @always_inline
-def _grep_lines[regex: Regex, captures: Bool](text: String) raises -> Int:
-    """Apply the selected matcher to each input line, excluding terminal LF."""
+def _grep_search_lines[regex: Regex](text: String) -> Int:
+    """Apply Boolean search to each input line, excluding terminal LF."""
     var length = text.byte_length()
     var total = 0
     var bytes = text.as_bytes()
@@ -944,10 +737,7 @@ def _grep_lines[regex: Regex, captures: Bool](text: String) raises -> Int:
         var line_end = length if newline < 0 else newline
         if line_end > line_start and Int(bytes[line_end - 1]) == 13:
             line_end -= 1
-        comptime if captures:
-            total += count_captures_span[regex](text[byte=line_start:line_end])
-        else:
-            total += Int(search_span[regex](text[byte=line_start:line_end]))
+        total += Int(search_span[regex](text[byte=line_start:line_end]))
         if newline < 0:
             break
         line_start = newline + 1
@@ -955,7 +745,26 @@ def _grep_lines[regex: Regex, captures: Bool](text: String) raises -> Int:
 
 
 @always_inline
-def grep[regex: Regex](text: String) raises -> Int:
+def _grep_capture_lines[regex: Regex](text: String) raises -> Int:
+    """Count capture participation per line, excluding terminal LF."""
+    var length = text.byte_length()
+    var total = 0
+    var bytes = text.as_bytes()
+    var line_start = 0
+    while line_start < length:
+        var newline = text.find("\n", line_start)
+        var line_end = length if newline < 0 else newline
+        if line_end > line_start and Int(bytes[line_end - 1]) == 13:
+            line_end -= 1
+        total += count_captures_span[regex](text[byte=line_start:line_end])
+        if newline < 0:
+            break
+        line_start = newline + 1
+    return total
+
+
+@always_inline
+def count_matching_lines[regex: Regex](text: String) -> Int:
     """Count input lines containing a match."""
     comptime lazy_literal = _anchored_lazy_literal_plan[
         regex.nodes, regex.root
@@ -968,11 +777,11 @@ def grep[regex: Regex](text: String) raises -> Int:
     comptime root = regex.nodes[regex.root]
     comptime if _is_prefixed_infix_search[regex.nodes, root]():
         return _grep_prefixed_infix[regex.nodes, root](text)
-    return _grep_lines[regex, False](text)
+    return _grep_search_lines[regex](text)
 
 
 @always_inline
-def grep_captures[regex: Regex](text: String) raises -> Int:
+def count_line_captures[regex: Regex](text: String) raises -> Int:
     """Count capture participation after matching each input line."""
     comptime if (
         _all_captures_mandatory[regex]()
@@ -990,5 +799,16 @@ def grep_captures[regex: Regex](text: String) raises -> Int:
         return _count_line_prefix_run_literal[
             regex, line_prefix.unsafe_value()
         ](span) * (regex.capture_count + 1)
+    return _grep_capture_lines[regex](text)
 
-    return _grep_lines[regex, True](text)
+
+@always_inline
+def grep[regex: Regex](text: String) -> Int:
+    """Compatibility alias for count_matching_lines."""
+    return count_matching_lines[regex](text)
+
+
+@always_inline
+def grep_captures[regex: Regex](text: String) raises -> Int:
+    """Compatibility alias for count_line_captures."""
+    return count_line_captures[regex](text)

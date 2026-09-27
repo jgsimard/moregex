@@ -35,18 +35,46 @@ from ._ast import (
     ZeroWidthNode,
 )
 
+from ._ast_equal import _same_bracket_class
+
 
 @always_inline
 def _append_range(
     mut lows: List[Int], mut highs: List[Int], low: Int, high: Int
 ):
-    for i in range(len(lows)):
-        if low <= highs[i] + 1 and lows[i] <= high + 1:
-            lows[i] = min(lows[i], low)
-            highs[i] = max(highs[i], high)
-            return
-    lows.append(low)
-    highs.append(high)
+    var sorted_lows = lows.copy()
+    var sorted_highs = highs.copy()
+    sorted_lows.append(low)
+    sorted_highs.append(high)
+
+    for i in range(len(sorted_lows)):
+        var best = i
+        for j in range(i + 1, len(sorted_lows)):
+            if sorted_lows[j] < sorted_lows[best]:
+                best = j
+        if best != i:
+            var saved_low = sorted_lows[i]
+            var saved_high = sorted_highs[i]
+            sorted_lows[i] = sorted_lows[best]
+            sorted_highs[i] = sorted_highs[best]
+            sorted_lows[best] = saved_low
+            sorted_highs[best] = saved_high
+
+    var merged_lows = List[Int]()
+    var merged_highs = List[Int]()
+    for i in range(len(sorted_lows)):
+        if (
+            len(merged_lows) > 0
+            and sorted_lows[i] <= merged_highs[len(merged_highs) - 1] + 1
+        ):
+            merged_highs[len(merged_highs) - 1] = max(
+                merged_highs[len(merged_highs) - 1], sorted_highs[i]
+            )
+        else:
+            merged_lows.append(sorted_lows[i])
+            merged_highs.append(sorted_highs[i])
+    lows = merged_lows^
+    highs = merged_highs^
 
 
 @always_inline
@@ -54,15 +82,59 @@ def _is_repeat_operator(ch: Int) -> Bool:
     return ch == ord("*") or ch == ord("+") or ch == ord("?") or ch == ord("{")
 
 
-def _same_bracket_class(
-    left: BracketClassNode, right: BracketClassNode
-) -> Bool:
-    if left.negated != right.negated or left.count != right.count:
-        return False
-    for i in range(left.count):
-        if left.lows[i] != right.lows[i] or left.highs[i] != right.highs[i]:
-            return False
-    return True
+@always_inline
+def _escaped_class_kind(ch: Int) -> Int:
+    if ch == ord("w"):
+        return CHAR_ASCII_WORD
+    if ch == ord("d"):
+        return CHAR_ASCII_DIGIT
+    if ch == ord("s"):
+        return CHAR_ASCII_WHITESPACE
+    if ch == ord("W"):
+        return CHAR_ASCII_NON_WORD
+    if ch == ord("D"):
+        return CHAR_ASCII_NON_DIGIT
+    if ch == ord("S"):
+        return CHAR_ASCII_NON_WHITESPACE
+    return -1
+
+
+def _append_class_kind_ranges(
+    mut lows: List[Int], mut highs: List[Int], kind: Int
+):
+    if kind == CHAR_ASCII_WORD:
+        _append_range(lows, highs, ord("a"), ord("z"))
+        _append_range(lows, highs, ord("A"), ord("Z"))
+        _append_range(lows, highs, ord("0"), ord("9"))
+        _append_range(lows, highs, ord("_"), ord("_"))
+    elif kind == CHAR_ASCII_DIGIT:
+        _append_range(lows, highs, ord("0"), ord("9"))
+    elif kind == CHAR_ASCII_WHITESPACE:
+        _append_range(lows, highs, ord(" "), ord(" "))
+        _append_range(lows, highs, ord("\t"), ord("\t"))
+        _append_range(lows, highs, ord("\n"), ord("\n"))
+        _append_range(lows, highs, ord("\r"), ord("\r"))
+    elif kind == CHAR_ASCII_NON_DIGIT:
+        _append_range(lows, highs, 0, ord("0") - 1)
+        _append_range(lows, highs, ord("9") + 1, 255)
+    elif kind == CHAR_ASCII_NON_WORD:
+        _append_range(lows, highs, 0, ord("0") - 1)
+        _append_range(lows, highs, ord("9") + 1, ord("A") - 1)
+        _append_range(lows, highs, ord("Z") + 1, ord("_") - 1)
+        _append_range(lows, highs, ord("_") + 1, ord("a") - 1)
+        _append_range(lows, highs, ord("z") + 1, 255)
+    else:
+        _append_range(lows, highs, 0, ord("\t") - 1)
+        _append_range(lows, highs, ord("\n") + 1, ord("\r") - 1)
+        _append_range(lows, highs, ord("\r") + 1, ord(" ") - 1)
+        _append_range(lows, highs, ord(" ") + 1, 255)
+
+
+@fieldwise_init
+struct _ParserFlags(Copyable):
+    var case_insensitive: Bool
+    var dot_all: Bool
+    var multi_line: Bool
 
 
 def _byte_sequence_cardinality(nodes: List[RegexNode], node_index: Int) -> Int:
@@ -211,6 +283,26 @@ struct _Parser(Movable):
         self.nodes.append(node^)
         return len(self.nodes) - 1
 
+    @always_inline
+    def flags(self) -> _ParserFlags:
+        return _ParserFlags(
+            self.case_insensitive,
+            self.dot_all,
+            self.multi_line,
+        )
+
+    @always_inline
+    def restore_flags(mut self, flags: _ParserFlags):
+        self.case_insensitive = flags.case_insensitive
+        self.dot_all = flags.dot_all
+        self.multi_line = flags.multi_line
+
+    @always_inline
+    def finish_group(mut self) raises:
+        if self.peek_byte() != ord(")"):
+            raise Error("expected closing parenthesis")
+        _ = self.advance_byte()
+
     def is_ascii_letter(self, ch: Int) -> Bool:
         var folded = ch | 0x20
         return ord("a") <= folded <= ord("z")
@@ -235,23 +327,17 @@ struct _Parser(Movable):
                 raise Error("too many capture groups")
             var capture_index = self.capture_count
             var child = self.parse_or()
-            if self.peek_byte() != ord(")"):
-                raise Error("expected closing parenthesis")
-            _ = self.advance_byte()
+            self.finish_group()
             return self.add(CaptureNode(child, capture_index))
 
         _ = self.advance_byte()
         if self.peek_byte() == ord(":"):
             _ = self.advance_byte()
             var child = self.parse_or()
-            if self.peek_byte() != ord(")"):
-                raise Error("expected closing parenthesis")
-            _ = self.advance_byte()
+            self.finish_group()
             return child
 
-        var old_case_insensitive = self.case_insensitive
-        var old_dot_all = self.dot_all
-        var old_multi_line = self.multi_line
+        var old_flags = self.flags()
         var flag_count = 0
         while True:
             var flag = self.peek_byte()
@@ -276,12 +362,8 @@ struct _Parser(Movable):
         _ = self.advance_byte()
 
         var child = self.parse_or()
-        if self.peek_byte() != ord(")"):
-            raise Error("expected closing parenthesis")
-        _ = self.advance_byte()
-        self.case_insensitive = old_case_insensitive
-        self.dot_all = old_dot_all
-        self.multi_line = old_multi_line
+        self.finish_group()
+        self.restore_flags(old_flags)
         return child
 
     def parse(mut self) raises -> Int:
@@ -289,11 +371,7 @@ struct _Parser(Movable):
         if self.pos != self.pattern.byte_length():
             raise Error(String(t"unexpected '{self.peek_codepoint()}'"))
         root = self._normalize_literal_cartesian(root)
-        if (
-            self.unicode
-            and self.pattern.find("][") >= 0
-            and self.pattern.find("|") >= 0
-        ):
+        if self.unicode:
             root = self._normalize_utf8_repeat_classes(root)
             root = self._normalize_root_utf8_repeat(root)
         return root
@@ -731,37 +809,9 @@ struct _Parser(Movable):
                 if self.peek_byte() < 0:
                     raise Error("incomplete escape in bracket class")
                 var escaped = ord(self.advance_codepoint())
-                if escaped == ord("d"):
-                    _append_range(lows, highs, ord("0"), ord("9"))
-                    continue
-                if escaped == ord("w"):
-                    _append_range(lows, highs, ord("a"), ord("z"))
-                    _append_range(lows, highs, ord("A"), ord("Z"))
-                    _append_range(lows, highs, ord("0"), ord("9"))
-                    _append_range(lows, highs, ord("_"), ord("_"))
-                    continue
-                if escaped == ord("s"):
-                    _append_range(lows, highs, ord(" "), ord(" "))
-                    _append_range(lows, highs, ord("\t"), ord("\t"))
-                    _append_range(lows, highs, ord("\n"), ord("\n"))
-                    _append_range(lows, highs, ord("\r"), ord("\r"))
-                    continue
-                if escaped == ord("D"):
-                    _append_range(lows, highs, 0, ord("0") - 1)
-                    _append_range(lows, highs, ord("9") + 1, 255)
-                    continue
-                if escaped == ord("W"):
-                    _append_range(lows, highs, 0, ord("0") - 1)
-                    _append_range(lows, highs, ord("9") + 1, ord("A") - 1)
-                    _append_range(lows, highs, ord("Z") + 1, ord("_") - 1)
-                    _append_range(lows, highs, ord("_") + 1, ord("a") - 1)
-                    _append_range(lows, highs, ord("z") + 1, 255)
-                    continue
-                if escaped == ord("S"):
-                    _append_range(lows, highs, 0, ord("\t") - 1)
-                    _append_range(lows, highs, ord("\n") + 1, ord("\r") - 1)
-                    _append_range(lows, highs, ord("\r") + 1, ord(" ") - 1)
-                    _append_range(lows, highs, ord(" ") + 1, 255)
+                var class_kind = _escaped_class_kind(escaped)
+                if class_kind >= 0:
+                    _append_class_kind_ranges(lows, highs, class_kind)
                     continue
                 low = self.parse_escaped_byte(escaped)
             else:
@@ -865,18 +915,9 @@ struct _Parser(Movable):
             if self.peek_byte() < 0:
                 raise Error("incomplete escape")
             var escaped = self.advance_codepoint()
-            if escaped == "w":
-                return self.add(CharClassNode(CHAR_ASCII_WORD))
-            if escaped == "d":
-                return self.add(CharClassNode(CHAR_ASCII_DIGIT))
-            if escaped == "s":
-                return self.add(CharClassNode(CHAR_ASCII_WHITESPACE))
-            if escaped == "W":
-                return self.add(CharClassNode(CHAR_ASCII_NON_WORD))
-            if escaped == "D":
-                return self.add(CharClassNode(CHAR_ASCII_NON_DIGIT))
-            if escaped == "S":
-                return self.add(CharClassNode(CHAR_ASCII_NON_WHITESPACE))
+            var class_kind = _escaped_class_kind(ord(escaped))
+            if class_kind >= 0:
+                return self.add(CharClassNode(class_kind))
             if escaped == "b":
                 return self.add(ZeroWidthNode(ASSERT_WORD_BOUNDARY))
             if escaped == "B":
