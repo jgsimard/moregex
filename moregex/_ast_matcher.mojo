@@ -1,17 +1,7 @@
 """Generic compile-time AST matcher."""
 
 from ._width import _fixed_node_width
-from ._ast import (
-    BracketClassNode,
-    CharClassNode,
-    EmptyNode,
-    LiteralNode,
-    OrNode,
-    RegexNode,
-    RepeatNode,
-    SequenceNode,
-    ZeroWidthNode,
-)
+from ._ast import RegexNode, SequenceNode
 from ._common import (
     _MatchResult,
     _bracket_accepts,
@@ -32,8 +22,8 @@ def _match_sequence_from[
     else:
         comptime child_index = sequence.items[item]
         comptime child = nodes[child_index]
-        comptime if child.isa[OrNode]():
-            comptime alternation = child[OrNode]
+        comptime __match child:
+        case .Or(alternation):
             comptime for option in range(alternation.count):
                 var alternative = _match_node[
                     nodes, alternation.options[option]
@@ -51,8 +41,7 @@ def _match_sequence_from[
                             + suffix.unsafe_value().consumed()
                         )
             return None
-        comptime if child.isa[RepeatNode]():
-            comptime repeat = child[RepeatNode]
+        case .Repeat(repeat):
             comptime child_width = _fixed_node_width[nodes, repeat.child]()
             comptime if child_width > 0:
                 comptime if not repeat.greedy:
@@ -113,6 +102,8 @@ def _match_sequence_from[
                     count -= 1
                     consumed -= child_width
                 return None
+        case _:
+            pass
 
         var result = _match_node[nodes, child_index](text, start)
         if not result:
@@ -132,16 +123,14 @@ def _match_node[
     nodes: List[RegexNode], node_index: Int
 ](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
     comptime node = nodes[node_index]
-    comptime if node.isa[EmptyNode]():
+    comptime __match node:
+    case .Empty:
         return _MatchResult(0)
-    elif node.isa[LiteralNode]():
-        comptime literal = node[LiteralNode]
+    case .Literal(literal):
         return _match_literal[literal.value](text, start)
-    elif node.isa[CharClassNode]():
-        comptime char_class = node[CharClassNode]
+    case .CharClass(char_class):
         return _match_class[char_class.kind](text, start)
-    elif node.isa[BracketClassNode]():
-        comptime bracket = node[BracketClassNode]
+    case .BracketClass(bracket):
         if start >= text.byte_length():
             return None
         var value = Int(text.as_bytes()[start])
@@ -150,20 +139,17 @@ def _match_node[
             var bit = UInt64(1) << UInt64(value % 64)
             return _MatchResult(1) if masks[value // 64] & bit != 0 else None
         return _MatchResult(1) if _bracket_accepts[bracket](value) else None
-    elif node.isa[ZeroWidthNode]():
-        comptime zero_width = node[ZeroWidthNode]
+    case .ZeroWidth(zero_width):
         return _MatchResult(0) if _zero_width_matches(
             zero_width.kind, text, start
         ) else None
-    elif node.isa[OrNode]():
-        comptime alternation = node[OrNode]
+    case .Or(alternation):
         comptime for i in range(alternation.count):
             var result = _match_node[nodes, alternation.options[i]](text, start)
             if result:
                 return result^
         return None
-    elif node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
+    case .Repeat(repeat):
         var count = 0
         var consumed = 0
         while True:
@@ -183,6 +169,7 @@ def _match_node[
         if count >= repeat.minimum:
             return _MatchResult(consumed)
         return None
-    else:
-        comptime sequence = node[SequenceNode]
+    case .Sequence(sequence):
         return _match_sequence_from[nodes, sequence, 0](text, start)
+    case .Capture(capture):
+        return _match_node[nodes, capture.child](text, start)

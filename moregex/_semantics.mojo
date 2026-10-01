@@ -1,6 +1,6 @@
 """Compile-time checks for regex execution-semantic coverage."""
 
-from ._ast import CharClassNode, OrNode, RegexNode, RepeatNode, SequenceNode
+from ._ast import CharClassNode, OrNode, RegexNode
 from ._tuning import MAX_NFA_REPEAT_EXPANSION
 from ._width import _semantic_fixed_width
 
@@ -13,8 +13,12 @@ def _nfa_match_semantics_required(
 ) -> Bool:
     """Whether this AST context needs ordered NFA path exploration."""
     ref node = nodes[node_index]
-    if node.isa[OrNode]():
-        ref alternation = node[OrNode]
+    __match node:
+    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+        _
+    ) | .ZeroWidth(_):
+        return False
+    case .Or(ref alternation):
         if (has_suffix or require_end) and _semantic_fixed_width(
             nodes, node_index
         ) < 0:
@@ -28,8 +32,7 @@ def _nfa_match_semantics_required(
             ):
                 return True
         return False
-    if node.isa[RepeatNode]():
-        ref repeat = node[RepeatNode]
+    case .Repeat(ref repeat):
         if (has_suffix or require_end) and not repeat.greedy:
             return True
         ref child = nodes[repeat.child]
@@ -42,8 +45,7 @@ def _nfa_match_semantics_required(
         ):
             return True
         return _nfa_match_semantics_required(nodes, repeat.child, True, False)
-    if node.isa[SequenceNode]():
-        ref sequence = node[SequenceNode]
+    case .Sequence(ref sequence):
         for i in range(sequence.count):
             var child_index = sequence.items[i]
             ref child = nodes[child_index]
@@ -76,7 +78,11 @@ def _nfa_match_semantics_required(
                 require_end and i + 1 == sequence.count,
             ):
                 return True
-    return False
+        return False
+    case .Capture(ref capture):
+        return _nfa_match_semantics_required(
+            nodes, capture.child, has_suffix, require_end
+        )
 
 
 def _nfa_full_semantics_required(nodes: List[RegexNode], root: Int) -> Bool:
@@ -90,24 +96,29 @@ def _nfa_partial_semantics_required(nodes: List[RegexNode], root: Int) -> Bool:
 def _nfa_node_supported(nodes: List[RegexNode], node_index: Int) -> Bool:
     """Whether Thompson compilation stays within its expansion limit."""
     ref node = nodes[node_index]
-    if node.isa[OrNode]():
-        ref alternation = node[OrNode]
+    __match node:
+    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+        _
+    ) | .ZeroWidth(_):
+        return True
+    case .Or(ref alternation):
         for i in range(alternation.count):
             if not _nfa_node_supported(nodes, alternation.options[i]):
                 return False
-    elif node.isa[RepeatNode]():
-        ref repeat = node[RepeatNode]
+        return True
+    case .Repeat(ref repeat):
         if repeat.minimum > MAX_NFA_REPEAT_EXPANSION or (
             repeat.maximum >= 0 and repeat.maximum > MAX_NFA_REPEAT_EXPANSION
         ):
             return False
         return _nfa_node_supported(nodes, repeat.child)
-    elif node.isa[SequenceNode]():
-        ref sequence = node[SequenceNode]
+    case .Sequence(ref sequence):
         for i in range(sequence.count):
             if not _nfa_node_supported(nodes, sequence.items[i]):
                 return False
-    return True
+        return True
+    case .Capture(ref capture):
+        return _nfa_node_supported(nodes, capture.child)
 
 
 def _semantics_supported(nodes: List[RegexNode], root: Int) -> Bool:

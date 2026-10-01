@@ -1,18 +1,6 @@
 """Reference runtime AST interpreter used by tests and benchmarks."""
 
-from ._ast import (
-    CHAR_UNICODE_DOT,
-    CHAR_UNICODE_DOTALL,
-    BracketClassNode,
-    CharClassNode,
-    EmptyNode,
-    LiteralNode,
-    OrNode,
-    RegexNode,
-    RepeatNode,
-    SequenceNode,
-    ZeroWidthNode,
-)
+from ._ast import CHAR_UNICODE_DOT, CHAR_UNICODE_DOTALL, RegexNode
 from ._syntax import Regex
 
 from ._byte_predicates import _runtime_bracket_accepts
@@ -28,10 +16,11 @@ def _match_node_runtime(
     nodes: List[RegexNode], node_index: Int, text: String, start: Int
 ) -> Optional[_MatchResult]:
     ref node = nodes[node_index]
-    if node.isa[EmptyNode]():
+    __match node:
+    case .Empty:
         return _MatchResult(0)
-    if node.isa[LiteralNode]():
-        ref value = node[LiteralNode].value
+    case .Literal(ref literal):
+        ref value = literal.value
         if start + value.byte_length() > text.byte_length():
             return None
         var text_bytes = text.as_bytes()
@@ -40,8 +29,8 @@ def _match_node_runtime(
             if text_bytes[start + i] != pattern_bytes[i]:
                 return None
         return _MatchResult(value.byte_length())
-    if node.isa[CharClassNode]():
-        var kind = node[CharClassNode].kind
+    case .CharClass(ref char_class):
+        var kind = char_class.kind
         if start >= text.byte_length():
             return None
         var value = Int(text.as_bytes()[start])
@@ -54,22 +43,19 @@ def _match_node_runtime(
         if _runtime_class_accepts(kind, value):
             return _MatchResult(1)
         return None
-    if node.isa[BracketClassNode]():
-        ref bracket = node[BracketClassNode]
+    case .BracketClass(ref bracket):
         if start >= text.byte_length():
             return None
         var value = Int(text.as_bytes()[start])
         if _runtime_bracket_accepts(bracket, value):
             return _MatchResult(1)
         return None
-    if node.isa[ZeroWidthNode]():
-        var kind = node[ZeroWidthNode].kind
+    case .ZeroWidth(ref zero_width):
         var span = text[byte = 0 : text.byte_length()]
         return _MatchResult(0) if _zero_width_matches(
-            kind, span, start
+            zero_width.kind, span, start
         ) else None
-    if node.isa[OrNode]():
-        ref alternation = node[OrNode]
+    case .Or(ref alternation):
         for i in range(alternation.count):
             var result = _match_node_runtime(
                 nodes, alternation.options[i], text, start
@@ -77,8 +63,7 @@ def _match_node_runtime(
             if result:
                 return result^
         return None
-    if node.isa[RepeatNode]():
-        ref repeat = node[RepeatNode]
+    case .Repeat(ref repeat):
         var count = 0
         var consumed = 0
         while repeat.maximum < 0 or count < repeat.maximum:
@@ -92,17 +77,18 @@ def _match_node_runtime(
         if count >= repeat.minimum:
             return _MatchResult(consumed)
         return None
-
-    ref sequence = node[SequenceNode]
-    var consumed = 0
-    for i in range(sequence.count):
-        var result = _match_node_runtime(
-            nodes, sequence.items[i], text, start + consumed
-        )
-        if not result:
-            return None
-        consumed += result.unsafe_value().consumed()
-    return _MatchResult(consumed)
+    case .Sequence(ref sequence):
+        var consumed = 0
+        for i in range(sequence.count):
+            var result = _match_node_runtime(
+                nodes, sequence.items[i], text, start + consumed
+            )
+            if not result:
+                return None
+            consumed += result.unsafe_value().consumed()
+        return _MatchResult(consumed)
+    case .Capture(ref capture):
+        return _match_node_runtime(nodes, capture.child, text, start)
 
 
 @no_inline

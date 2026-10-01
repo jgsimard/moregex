@@ -6,16 +6,7 @@ from ._ast import (
     CHAR_BYTE_DOTALL,
     CHAR_UNICODE_DOT,
     CHAR_UNICODE_DOTALL,
-    BracketClassNode,
-    CaptureNode,
-    CharClassNode,
-    EmptyNode,
-    LiteralNode,
-    OrNode,
     RegexNode,
-    RepeatNode,
-    SequenceNode,
-    ZeroWidthNode,
 )
 from ._byte_predicates import _build_bracket_masks
 from ._common import _runtime_class_accepts, _zero_width_matches
@@ -156,10 +147,10 @@ def _compile_node(
     continuation: Int,
 ) -> Int:
     ref node = nodes[node_index]
-    if node.isa[EmptyNode]():
+    __match node:
+    case .Empty:
         return continuation
-    if node.isa[LiteralNode]():
-        ref literal = node[LiteralNode]
+    case .Literal(ref literal):
         var start = continuation
         var offset = literal.value.byte_length()
         while offset > 0:
@@ -172,8 +163,7 @@ def _compile_node(
                 Int(literal.value.as_bytes()[offset]),
             )
         return start
-    if node.isa[CharClassNode]():
-        ref char_class = node[CharClassNode]
+    case .CharClass(ref char_class):
         if (
             char_class.kind == CHAR_UNICODE_DOT
             or char_class.kind == CHAR_UNICODE_DOTALL
@@ -182,8 +172,8 @@ def _compile_node(
         return _emit_instruction(
             program, _NFA_CLASS, continuation, -1, char_class.kind
         )
-    if node.isa[BracketClassNode]():
-        var masks = _build_bracket_masks(node[BracketClassNode])
+    case .BracketClass(ref bracket):
+        var masks = _build_bracket_masks(bracket)
         return _emit_instruction(
             program,
             _NFA_BRACKET,
@@ -195,21 +185,11 @@ def _compile_node(
             masks[2],
             masks[3],
         )
-    if node.isa[ZeroWidthNode]():
+    case .ZeroWidth(ref zero_width):
         return _emit_instruction(
-            program, _NFA_ASSERT, continuation, -1, node[ZeroWidthNode].kind
+            program, _NFA_ASSERT, continuation, -1, zero_width.kind
         )
-    if node.isa[CaptureNode]():
-        ref capture = node[CaptureNode]
-        var end = _emit_instruction(
-            program, _NFA_CAPTURE_END, continuation, -1, capture.index
-        )
-        var child = _compile_node(nodes, capture.child, program, end)
-        return _emit_instruction(
-            program, _NFA_CAPTURE_START, child, -1, capture.index
-        )
-    if node.isa[OrNode]():
-        ref alternation = node[OrNode]
+    case .Or(ref alternation):
         if alternation.count == 0:
             return continuation
         var option = alternation.count - 1
@@ -223,8 +203,7 @@ def _compile_node(
             )
             start = _emit_instruction(program, _NFA_SPLIT, preferred, start, 0)
         return start
-    if node.isa[RepeatNode]():
-        ref repeat = node[RepeatNode]
+    case .Repeat(ref repeat):
         var start = continuation
         if repeat.maximum < 0:
             var split = _emit_instruction(
@@ -255,14 +234,21 @@ def _compile_node(
             start = _compile_node(nodes, repeat.child, program, start)
             required_count -= 1
         return start
-
-    ref sequence = node[SequenceNode]
-    var start = continuation
-    var item = sequence.count
-    while item > 0:
-        item -= 1
-        start = _compile_node(nodes, sequence.items[item], program, start)
-    return start
+    case .Sequence(ref sequence):
+        var start = continuation
+        var item = sequence.count
+        while item > 0:
+            item -= 1
+            start = _compile_node(nodes, sequence.items[item], program, start)
+        return start
+    case .Capture(ref capture):
+        var end = _emit_instruction(
+            program, _NFA_CAPTURE_END, continuation, -1, capture.index
+        )
+        var child = _compile_node(nodes, capture.child, program, end)
+        return _emit_instruction(
+            program, _NFA_CAPTURE_START, child, -1, capture.index
+        )
 
 
 def _compile_program(

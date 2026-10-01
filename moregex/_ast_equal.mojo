@@ -41,28 +41,28 @@ def _same_ast_node(
     """Recursively compare two normalized AST subtrees."""
     ref lhs = lhs_nodes[lhs_index]
     ref rhs = rhs_nodes[rhs_index]
-    if lhs.isa[EmptyNode]():
+    __match lhs:
+    case .Empty:
         return rhs.isa[EmptyNode]()
-    if lhs.isa[LiteralNode]():
+    case .Literal(ref lhs_literal):
         return rhs.isa[LiteralNode]() and (
-            lhs[LiteralNode].value == rhs[LiteralNode].value
+            lhs_literal.value == rhs[LiteralNode].value
         )
-    if lhs.isa[CharClassNode]():
+    case .CharClass(ref lhs_class):
         return rhs.isa[CharClassNode]() and (
-            lhs[CharClassNode].kind == rhs[CharClassNode].kind
+            lhs_class.kind == rhs[CharClassNode].kind
         )
-    if lhs.isa[BracketClassNode]():
+    case .BracketClass(ref lhs_bracket):
         return rhs.isa[BracketClassNode]() and _same_bracket_class(
-            lhs[BracketClassNode], rhs[BracketClassNode]
+            lhs_bracket, rhs[BracketClassNode]
         )
-    if lhs.isa[ZeroWidthNode]():
+    case .ZeroWidth(ref lhs_zero_width):
         return rhs.isa[ZeroWidthNode]() and (
-            lhs[ZeroWidthNode].kind == rhs[ZeroWidthNode].kind
+            lhs_zero_width.kind == rhs[ZeroWidthNode].kind
         )
-    if lhs.isa[OrNode]():
+    case .Or(ref lhs_or):
         if not rhs.isa[OrNode]():
             return False
-        ref lhs_or = lhs[OrNode]
         ref rhs_or = rhs[OrNode]
         if lhs_or.count != rhs_or.count:
             return False
@@ -75,10 +75,9 @@ def _same_ast_node(
             ):
                 return False
         return True
-    if lhs.isa[RepeatNode]():
+    case .Repeat(ref lhs_repeat):
         if not rhs.isa[RepeatNode]():
             return False
-        ref lhs_repeat = lhs[RepeatNode]
         ref rhs_repeat = rhs[RepeatNode]
         return (
             lhs_repeat.minimum == rhs_repeat.minimum
@@ -91,10 +90,9 @@ def _same_ast_node(
                 rhs_repeat.child,
             )
         )
-    if lhs.isa[SequenceNode]():
+    case .Sequence(ref lhs_sequence):
         if not rhs.isa[SequenceNode]():
             return False
-        ref lhs_sequence = lhs[SequenceNode]
         ref rhs_sequence = rhs[SequenceNode]
         if lhs_sequence.count != rhs_sequence.count:
             return False
@@ -107,13 +105,13 @@ def _same_ast_node(
             ):
                 return False
         return True
-    if not lhs.isa[CaptureNode]() or not rhs.isa[CaptureNode]():
-        return False
-    ref lhs_capture = lhs[CaptureNode]
-    ref rhs_capture = rhs[CaptureNode]
-    return lhs_capture.index == rhs_capture.index and _same_ast_node(
-        lhs_nodes,
-        lhs_capture.child,
-        rhs_nodes,
-        rhs_capture.child,
-    )
+    case .Capture(ref lhs_capture):
+        if not rhs.isa[CaptureNode]():
+            return False
+        ref rhs_capture = rhs[CaptureNode]
+        return lhs_capture.index == rhs_capture.index and _same_ast_node(
+            lhs_nodes,
+            lhs_capture.child,
+            rhs_nodes,
+            rhs_capture.child,
+        )

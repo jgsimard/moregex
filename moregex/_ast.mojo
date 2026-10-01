@@ -1,5 +1,7 @@
 """Compile-time regex syntax tree types and semantic constants."""
 
+from std.builtin.rebind import rebind
+from std.builtin.variadics import ParameterList, TypeList, _MLIR
 from std.utils import StaticTuple, Variant
 
 
@@ -82,14 +84,90 @@ struct CaptureNode(TrivialRegisterPassable):
     var index: Int
 
 
-comptime RegexNode = Variant[
-    EmptyNode,
-    LiteralNode,
-    CharClassNode,
-    BracketClassNode,
-    ZeroWidthNode,
-    OrNode,
-    RepeatNode,
-    SequenceNode,
-    CaptureNode,
-]
+struct RegexNode(EnumLike, ImplicitlyCopyable):
+    """A regex AST node with named cases for exhaustive pattern matching."""
+
+    comptime _Storage = Variant[
+        EmptyNode,
+        LiteralNode,
+        CharClassNode,
+        BracketClassNode,
+        ZeroWidthNode,
+        OrNode,
+        RepeatNode,
+        SequenceNode,
+        CaptureNode,
+    ]
+
+    var _value: Self._Storage
+
+    comptime _enum_case_names = ParameterList.of[
+        "Empty".value,
+        "Literal".value,
+        "CharClass".value,
+        "BracketClass".value,
+        "ZeroWidth".value,
+        "Or".value,
+        "Repeat".value,
+        "Sequence".value,
+        "Capture".value,
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        Trait=AnyType,
+        EmptyNode,
+        LiteralNode,
+        CharClassNode,
+        BracketClassNode,
+        ZeroWidthNode,
+        OrNode,
+        RepeatNode,
+        SequenceNode,
+        CaptureNode,
+    ].values
+
+    @implicit
+    def __init__[T: Movable](out self, var value: T):
+        self._value = Self._Storage(value^)
+
+    @always_inline
+    def isa[T: AnyType](self) -> Bool:
+        return self._value.isa[T]()
+
+    @always_inline
+    def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
+        return Pointer(to=self._value[T]).unsafe_origin_cast[
+            origin_of(self)
+        ]()[]
+
+    @always_inline
+    def _get_enum_discriminant(self) -> Int:
+        if self._value.isa[EmptyNode]():
+            return 0
+        if self._value.isa[LiteralNode]():
+            return 1
+        if self._value.isa[CharClassNode]():
+            return 2
+        if self._value.isa[BracketClassNode]():
+            return 3
+        if self._value.isa[ZeroWidthNode]():
+            return 4
+        if self._value.isa[OrNode]():
+            return 5
+        if self._value.isa[RepeatNode]():
+            return 6
+        if self._value.isa[SequenceNode]():
+            return 7
+        return 8
+
+    @always_inline
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime Payload = TypeList[Trait=AnyType, Self._enum_case_types]()[id]
+        return rebind[Payload](
+            Pointer(to=self._value.unsafe_get[Payload]()).unsafe_origin_cast[
+                origin_of(self)
+            ]()[]
+        )
