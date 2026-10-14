@@ -19,32 +19,32 @@ from ._ast import (
 def _semantic_minimum_width(nodes: List[RegexNode], node_index: Int) -> Int:
     """Return the minimum bytes consumed by any successful match."""
     ref node = nodes[node_index]
-    __match node:
-    case .Empty(_) | .ZeroWidth(_):
-        return 0
-    case .Literal(ref literal):
-        return literal.value.byte_length()
-    case .CharClass(_) | .BracketClass(_):
-        return 1
-    case .Capture(ref capture):
-        return _semantic_minimum_width(nodes, capture.child)
-    case .Or(ref alternation):
-        if alternation.count == 0:
+    match node:
+        case .Empty(_) | .ZeroWidth(_):
             return 0
-        var width = _semantic_minimum_width(nodes, alternation.options[0])
-        for i in range(1, alternation.count):
-            width = min(
-                width,
-                _semantic_minimum_width(nodes, alternation.options[i]),
-            )
-        return width
-    case .Repeat(ref repeat):
-        return repeat.minimum * _semantic_minimum_width(nodes, repeat.child)
-    case .Sequence(ref sequence):
-        var width = 0
-        for i in range(sequence.count):
-            width += _semantic_minimum_width(nodes, sequence.items[i])
-        return width
+        case .Literal(ref literal):
+            return literal.value.byte_length()
+        case .CharClass(_) | .BracketClass(_):
+            return 1
+        case .Capture(ref capture):
+            return _semantic_minimum_width(nodes, capture.child)
+        case .Or(ref alternation):
+            if alternation.count == 0:
+                return 0
+            var width = _semantic_minimum_width(nodes, alternation.options[0])
+            for i in range(1, alternation.count):
+                width = min(
+                    width,
+                    _semantic_minimum_width(nodes, alternation.options[i]),
+                )
+            return width
+        case .Repeat(ref repeat):
+            return repeat.minimum * _semantic_minimum_width(nodes, repeat.child)
+        case .Sequence(ref sequence):
+            var width = 0
+            for i in range(sequence.count):
+                width += _semantic_minimum_width(nodes, sequence.items[i])
+            return width
 
 
 def _semantic_fixed_width(
@@ -58,104 +58,106 @@ def _semantic_fixed_width(
     assertion. Semantic validation uses the exact zero-byte assertion width.
     """
     ref node = nodes[node_index]
-    __match node:
-    case .Empty:
-        return 0
-    case .ZeroWidth:
-        return 0 if assertions_are_zero_width else -1
-    case .Literal(ref literal):
-        return literal.value.byte_length()
-    case .CharClass(ref char_class):
-        var kind = char_class.kind
-        return -1 if (
-            kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL
-        ) else 1
-    case .BracketClass:
-        return 1
-    case .Capture(ref capture):
-        return _semantic_fixed_width(
-            nodes, capture.child, assertions_are_zero_width
-        )
-    case .Or(ref alternation):
-        if alternation.count == 0:
+    match node:
+        case .Empty:
             return 0
-        var width = _semantic_fixed_width(
-            nodes, alternation.options[0], assertions_are_zero_width
-        )
-        if width < 0:
-            return -1
-        for i in range(1, alternation.count):
-            if (
-                _semantic_fixed_width(
-                    nodes,
-                    alternation.options[i],
-                    assertions_are_zero_width,
-                )
-                != width
-            ):
-                return -1
-        return width
-    case .Repeat(ref repeat):
-        if repeat.maximum != repeat.minimum:
-            return -1
-        var child_width = _semantic_fixed_width(
-            nodes, repeat.child, assertions_are_zero_width
-        )
-        return -1 if child_width < 0 else repeat.minimum * child_width
-    case .Sequence(ref sequence):
-        var width = 0
-        for i in range(sequence.count):
-            var child_width = _semantic_fixed_width(
-                nodes, sequence.items[i], assertions_are_zero_width
+        case .ZeroWidth:
+            return 0 if assertions_are_zero_width else -1
+        case .Literal(ref literal):
+            return literal.value.byte_length()
+        case .CharClass(ref char_class):
+            var kind = char_class.kind
+            return -1 if (
+                kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL
+            ) else 1
+        case .BracketClass:
+            return 1
+        case .Capture(ref capture):
+            return _semantic_fixed_width(
+                nodes, capture.child, assertions_are_zero_width
             )
-            if child_width < 0:
+        case .Or(ref alternation):
+            if alternation.count == 0:
+                return 0
+            var width = _semantic_fixed_width(
+                nodes, alternation.options[0], assertions_are_zero_width
+            )
+            if width < 0:
                 return -1
-            width += child_width
-        return width
+            for i in range(1, alternation.count):
+                if (
+                    _semantic_fixed_width(
+                        nodes,
+                        alternation.options[i],
+                        assertions_are_zero_width,
+                    )
+                    != width
+                ):
+                    return -1
+            return width
+        case .Repeat(ref repeat):
+            if repeat.maximum != repeat.minimum:
+                return -1
+            var child_width = _semantic_fixed_width(
+                nodes, repeat.child, assertions_are_zero_width
+            )
+            return -1 if child_width < 0 else repeat.minimum * child_width
+        case .Sequence(ref sequence):
+            var width = 0
+            for i in range(sequence.count):
+                var child_width = _semantic_fixed_width(
+                    nodes, sequence.items[i], assertions_are_zero_width
+                )
+                if child_width < 0:
+                    return -1
+                width += child_width
+            return width
 
 
 def _semantic_maximum_width(nodes: List[RegexNode], node_index: Int) -> Int:
     """Return the maximum consumed byte width, or -1 when unbounded."""
     ref node = nodes[node_index]
-    __match node:
-    case .Empty(_) | .ZeroWidth(_):
-        return 0
-    case .Literal(ref literal):
-        return literal.value.byte_length()
-    case .CharClass(ref char_class):
-        var kind = char_class.kind
-        return 4 if (
-            kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL
-        ) else 1
-    case .BracketClass:
-        return 1
-    case .Capture(ref capture):
-        return _semantic_maximum_width(nodes, capture.child)
-    case .Or(ref alternation):
-        var width = 0
-        for i in range(alternation.count):
-            var option_width = _semantic_maximum_width(
-                nodes, alternation.options[i]
-            )
-            if option_width < 0:
-                return -1
-            width = max(width, option_width)
-        return width
-    case .Repeat(ref repeat):
-        if repeat.maximum == 0:
+    match node:
+        case .Empty(_) | .ZeroWidth(_):
             return 0
-        if repeat.maximum < 0:
-            return -1
-        var child_width = _semantic_maximum_width(nodes, repeat.child)
-        return -1 if child_width < 0 else repeat.maximum * child_width
-    case .Sequence(ref sequence):
-        var width = 0
-        for i in range(sequence.count):
-            var child_width = _semantic_maximum_width(nodes, sequence.items[i])
-            if child_width < 0:
+        case .Literal(ref literal):
+            return literal.value.byte_length()
+        case .CharClass(ref char_class):
+            var kind = char_class.kind
+            return 4 if (
+                kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL
+            ) else 1
+        case .BracketClass:
+            return 1
+        case .Capture(ref capture):
+            return _semantic_maximum_width(nodes, capture.child)
+        case .Or(ref alternation):
+            var width = 0
+            for i in range(alternation.count):
+                var option_width = _semantic_maximum_width(
+                    nodes, alternation.options[i]
+                )
+                if option_width < 0:
+                    return -1
+                width = max(width, option_width)
+            return width
+        case .Repeat(ref repeat):
+            if repeat.maximum == 0:
+                return 0
+            if repeat.maximum < 0:
                 return -1
-            width += child_width
-        return width
+            var child_width = _semantic_maximum_width(nodes, repeat.child)
+            return -1 if child_width < 0 else repeat.maximum * child_width
+        case .Sequence(ref sequence):
+            var width = 0
+            for i in range(sequence.count):
+                var child_width = _semantic_maximum_width(
+                    nodes, sequence.items[i]
+                )
+                if child_width < 0:
+                    return -1
+                width += child_width
+            return width
 
 
 def _minimum_node_width[nodes: List[RegexNode], node_index: Int]() -> Int:

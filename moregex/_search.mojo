@@ -561,40 +561,40 @@ def _node_starts_only_with_ascii_word[
 ]() -> Bool:
     """Conservatively prove every match starts with an ASCII word byte."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(literal):
-        comptime if literal.value.byte_length() == 0:
-            return False
-        return _is_ascii_word(Int(literal.value.as_bytes()[0]))
-    case .CharClass(char_class):
-        return char_class.kind == CHAR_ASCII_WORD
-    case .BracketClass(bracket):
-        comptime for value in range(256):
-            comptime if _bracket_accepts[bracket](value):
-                comptime if not _is_ascii_word(value):
-                    return False
-        return True
-    case .Or(alternation):
-        comptime if alternation.count == 0:
-            return False
-        comptime for i in range(alternation.count):
-            comptime if not _node_starts_only_with_ascii_word[
-                nodes, alternation.options[i]
-            ]():
+    comptime match node:
+        case .Literal(literal):
+            comptime if literal.value.byte_length() == 0:
                 return False
-        return True
-    case .Repeat(repeat):
-        comptime if repeat.minimum == 0:
+            return _is_ascii_word(Int(literal.value.as_bytes()[0]))
+        case .CharClass(char_class):
+            return char_class.kind == CHAR_ASCII_WORD
+        case .BracketClass(bracket):
+            comptime for value in range(256):
+                comptime if _bracket_accepts[bracket](value):
+                    comptime if not _is_ascii_word(value):
+                        return False
+            return True
+        case .Or(alternation):
+            comptime if alternation.count == 0:
+                return False
+            comptime for i in range(alternation.count):
+                comptime if not _node_starts_only_with_ascii_word[
+                    nodes, alternation.options[i]
+                ]():
+                    return False
+            return True
+        case .Repeat(repeat):
+            comptime if repeat.minimum == 0:
+                return False
+            return _node_starts_only_with_ascii_word[nodes, repeat.child]()
+        case .Sequence(sequence):
+            comptime if sequence.count == 0:
+                return False
+            return _node_starts_only_with_ascii_word[nodes, sequence.items[0]]()
+        case .Capture(capture):
+            return _node_starts_only_with_ascii_word[nodes, capture.child]()
+        case .Empty(_) | .ZeroWidth(_):
             return False
-        return _node_starts_only_with_ascii_word[nodes, repeat.child]()
-    case .Sequence(sequence):
-        comptime if sequence.count == 0:
-            return False
-        return _node_starts_only_with_ascii_word[nodes, sequence.items[0]]()
-    case .Capture(capture):
-        return _node_starts_only_with_ascii_word[nodes, capture.child]()
-    case .Empty(_) | .ZeroWidth(_):
-        return False
 
 
 @always_inline

@@ -147,108 +147,116 @@ def _compile_node(
     continuation: Int,
 ) -> Int:
     ref node = nodes[node_index]
-    __match node:
-    case .Empty:
-        return continuation
-    case .Literal(ref literal):
-        var start = continuation
-        var offset = literal.value.byte_length()
-        while offset > 0:
-            offset -= 1
-            start = _emit_instruction(
-                program,
-                _NFA_BYTE,
-                start,
-                -1,
-                Int(literal.value.as_bytes()[offset]),
-            )
-        return start
-    case .CharClass(ref char_class):
-        if (
-            char_class.kind == CHAR_UNICODE_DOT
-            or char_class.kind == CHAR_UNICODE_DOTALL
-        ):
-            return _compile_unicode_dot(char_class.kind, program, continuation)
-        return _emit_instruction(
-            program, _NFA_CLASS, continuation, -1, char_class.kind
-        )
-    case .BracketClass(ref bracket):
-        var masks = _build_bracket_masks(bracket)
-        return _emit_instruction(
-            program,
-            _NFA_BRACKET,
-            continuation,
-            -1,
-            0,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-        )
-    case .ZeroWidth(ref zero_width):
-        return _emit_instruction(
-            program, _NFA_ASSERT, continuation, -1, zero_width.kind
-        )
-    case .Or(ref alternation):
-        if alternation.count == 0:
+    match node:
+        case .Empty:
             return continuation
-        var option = alternation.count - 1
-        var start = _compile_node(
-            nodes, alternation.options[option], program, continuation
-        )
-        while option > 0:
-            option -= 1
-            var preferred = _compile_node(
+        case .Literal(ref literal):
+            var start = continuation
+            var offset = literal.value.byte_length()
+            while offset > 0:
+                offset -= 1
+                start = _emit_instruction(
+                    program,
+                    _NFA_BYTE,
+                    start,
+                    -1,
+                    Int(literal.value.as_bytes()[offset]),
+                )
+            return start
+        case .CharClass(ref char_class):
+            if (
+                char_class.kind == CHAR_UNICODE_DOT
+                or char_class.kind == CHAR_UNICODE_DOTALL
+            ):
+                return _compile_unicode_dot(
+                    char_class.kind, program, continuation
+                )
+            return _emit_instruction(
+                program, _NFA_CLASS, continuation, -1, char_class.kind
+            )
+        case .BracketClass(ref bracket):
+            var masks = _build_bracket_masks(bracket)
+            return _emit_instruction(
+                program,
+                _NFA_BRACKET,
+                continuation,
+                -1,
+                0,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+            )
+        case .ZeroWidth(ref zero_width):
+            return _emit_instruction(
+                program, _NFA_ASSERT, continuation, -1, zero_width.kind
+            )
+        case .Or(ref alternation):
+            if alternation.count == 0:
+                return continuation
+            var option = alternation.count - 1
+            var start = _compile_node(
                 nodes, alternation.options[option], program, continuation
             )
-            start = _emit_instruction(program, _NFA_SPLIT, preferred, start, 0)
-        return start
-    case .Repeat(ref repeat):
-        var start = continuation
-        if repeat.maximum < 0:
-            var split = _emit_instruction(
-                program, _NFA_SPLIT, -1, continuation, 0
-            )
-            var child = _compile_node(nodes, repeat.child, program, split)
-            if repeat.greedy:
-                program[split].out1 = child
-            else:
-                program[split].out1 = continuation
-                program[split].out2 = child
-            start = split
-        else:
-            var optional_count = repeat.maximum - repeat.minimum
-            while optional_count > 0:
-                var child = _compile_node(nodes, repeat.child, program, start)
+            while option > 0:
+                option -= 1
+                var preferred = _compile_node(
+                    nodes, alternation.options[option], program, continuation
+                )
+                start = _emit_instruction(
+                    program, _NFA_SPLIT, preferred, start, 0
+                )
+            return start
+        case .Repeat(ref repeat):
+            var start = continuation
+            if repeat.maximum < 0:
+                var split = _emit_instruction(
+                    program, _NFA_SPLIT, -1, continuation, 0
+                )
+                var child = _compile_node(nodes, repeat.child, program, split)
                 if repeat.greedy:
-                    start = _emit_instruction(
-                        program, _NFA_SPLIT, child, start, 0
-                    )
+                    program[split].out1 = child
                 else:
-                    start = _emit_instruction(
-                        program, _NFA_SPLIT, start, child, 0
+                    program[split].out1 = continuation
+                    program[split].out2 = child
+                start = split
+            else:
+                var optional_count = repeat.maximum - repeat.minimum
+                while optional_count > 0:
+                    var child = _compile_node(
+                        nodes, repeat.child, program, start
                     )
-                optional_count -= 1
-        var required_count = repeat.minimum
-        while required_count > 0:
-            start = _compile_node(nodes, repeat.child, program, start)
-            required_count -= 1
-        return start
-    case .Sequence(ref sequence):
-        var start = continuation
-        var item = sequence.count
-        while item > 0:
-            item -= 1
-            start = _compile_node(nodes, sequence.items[item], program, start)
-        return start
-    case .Capture(ref capture):
-        var end = _emit_instruction(
-            program, _NFA_CAPTURE_END, continuation, -1, capture.index
-        )
-        var child = _compile_node(nodes, capture.child, program, end)
-        return _emit_instruction(
-            program, _NFA_CAPTURE_START, child, -1, capture.index
-        )
+                    if repeat.greedy:
+                        start = _emit_instruction(
+                            program, _NFA_SPLIT, child, start, 0
+                        )
+                    else:
+                        start = _emit_instruction(
+                            program, _NFA_SPLIT, start, child, 0
+                        )
+                    optional_count -= 1
+            var required_count = repeat.minimum
+            while required_count > 0:
+                start = _compile_node(nodes, repeat.child, program, start)
+                required_count -= 1
+            return start
+        case .Sequence(ref sequence):
+            var start = continuation
+            var item = sequence.count
+            while item > 0:
+                item -= 1
+                start = _compile_node(
+                    nodes, sequence.items[item], program, start
+                )
+            return start
+        case .Capture(ref capture):
+            var end = _emit_instruction(
+                program, _NFA_CAPTURE_END, continuation, -1, capture.index
+            )
+            var child = _compile_node(nodes, capture.child, program, end)
+            return _emit_instruction(
+                program, _NFA_CAPTURE_START, child, -1, capture.index
+            )
 
 
 def _compile_program(

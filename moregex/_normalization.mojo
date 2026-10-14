@@ -81,45 +81,45 @@ def _append_without_captures(
 ) -> Int:
     """Rebuild only capture-bearing AST paths while sharing unchanged nodes."""
     ref node = nodes[node_index]
-    __match node:
-    case .Or(ref alternation):
-        var options = StaticTuple[Int, MAX_BRANCHES]()
-        var changed = False
-        for i in range(alternation.count):
-            options[i] = _append_without_captures(
-                nodes, alternation.options[i], result
+    match node:
+        case .Or(ref alternation):
+            var options = StaticTuple[Int, MAX_BRANCHES]()
+            var changed = False
+            for i in range(alternation.count):
+                options[i] = _append_without_captures(
+                    nodes, alternation.options[i], result
+                )
+                changed = changed or options[i] != alternation.options[i]
+            if not changed:
+                return node_index
+            result.append(OrNode(options, alternation.count))
+            return len(result) - 1
+        case .Repeat(ref repeat):
+            var child = _append_without_captures(nodes, repeat.child, result)
+            if child == repeat.child:
+                return node_index
+            result.append(
+                RepeatNode(child, repeat.minimum, repeat.maximum, repeat.greedy)
             )
-            changed = changed or options[i] != alternation.options[i]
-        if not changed:
+            return len(result) - 1
+        case .Sequence(ref sequence):
+            var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
+            var changed = False
+            for i in range(sequence.count):
+                items[i] = _append_without_captures(
+                    nodes, sequence.items[i], result
+                )
+                changed = changed or items[i] != sequence.items[i]
+            if not changed:
+                return node_index
+            result.append(SequenceNode(items, sequence.count))
+            return len(result) - 1
+        case .Capture(ref capture):
+            return _append_without_captures(nodes, capture.child, result)
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
             return node_index
-        result.append(OrNode(options, alternation.count))
-        return len(result) - 1
-    case .Repeat(ref repeat):
-        var child = _append_without_captures(nodes, repeat.child, result)
-        if child == repeat.child:
-            return node_index
-        result.append(
-            RepeatNode(child, repeat.minimum, repeat.maximum, repeat.greedy)
-        )
-        return len(result) - 1
-    case .Sequence(ref sequence):
-        var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
-        var changed = False
-        for i in range(sequence.count):
-            items[i] = _append_without_captures(
-                nodes, sequence.items[i], result
-            )
-            changed = changed or items[i] != sequence.items[i]
-        if not changed:
-            return node_index
-        result.append(SequenceNode(items, sequence.count))
-        return len(result) - 1
-    case .Capture(ref capture):
-        return _append_without_captures(nodes, capture.child, result)
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return node_index
 
 
 def _normalize_literal_cartesian(

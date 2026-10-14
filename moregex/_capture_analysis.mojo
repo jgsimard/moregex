@@ -30,23 +30,23 @@ def _alternation_mandatory_capture_mask[
 def _mandatory_capture_mask[nodes: List[RegexNode], node_index: Int]() -> Int:
     """Return capture groups participating in every match of an AST node."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return 0
-    case .Or(alternation):
-        return _alternation_mandatory_capture_mask[nodes, alternation]()
-    case .Repeat(repeat):
-        comptime if repeat.minimum > 0:
-            return _mandatory_capture_mask[nodes, repeat.child]()
-        return 0
-    case .Sequence(sequence):
-        return _sequence_mandatory_capture_mask[nodes, sequence, 0]()
-    case .Capture(capture):
-        return (Int(1) << (capture.index - 1)) | _mandatory_capture_mask[
-            nodes, capture.child
-        ]()
+    comptime match node:
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
+            return 0
+        case .Or(alternation):
+            return _alternation_mandatory_capture_mask[nodes, alternation]()
+        case .Repeat(repeat):
+            comptime if repeat.minimum > 0:
+                return _mandatory_capture_mask[nodes, repeat.child]()
+            return 0
+        case .Sequence(sequence):
+            return _sequence_mandatory_capture_mask[nodes, sequence, 0]()
+        case .Capture(capture):
+            return (Int(1) << (capture.index - 1)) | _mandatory_capture_mask[
+                nodes, capture.child
+            ]()
 
 
 def _all_captures_mandatory[regex: Regex]() -> Bool:
@@ -108,27 +108,35 @@ def _constant_capture_participation[
     groups even when each iteration has the same capture count.
     """
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return 0
-    case .Or(alternation):
-        return _constant_capture_participation_alternation[nodes, alternation]()
-    case .Repeat(repeat):
-        comptime child = _constant_capture_participation[nodes, repeat.child]()
-        comptime if repeat.maximum == 0 or child == 0:
+    comptime match node:
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
             return 0
-        comptime if repeat.minimum == 0 or repeat.maximum != 1 or child < 0:
-            return -1
-        return child
-    case .Sequence(sequence):
-        return _constant_capture_participation_sequence[nodes, sequence, 0]()
-    case .Capture(capture):
-        comptime child = _constant_capture_participation[nodes, capture.child]()
-        comptime if child < 0:
-            return -1
-        return child + 1
+        case .Or(alternation):
+            return _constant_capture_participation_alternation[
+                nodes, alternation
+            ]()
+        case .Repeat(repeat):
+            comptime child = _constant_capture_participation[
+                nodes, repeat.child
+            ]()
+            comptime if repeat.maximum == 0 or child == 0:
+                return 0
+            comptime if repeat.minimum == 0 or repeat.maximum != 1 or child < 0:
+                return -1
+            return child
+        case .Sequence(sequence):
+            return _constant_capture_participation_sequence[
+                nodes, sequence, 0
+            ]()
+        case .Capture(capture):
+            comptime child = _constant_capture_participation[
+                nodes, capture.child
+            ]()
+            comptime if child < 0:
+                return -1
+            return child + 1
 
 
 def _constant_capture_count[regex: Regex]() -> Int:

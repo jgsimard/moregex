@@ -490,27 +490,29 @@ def _find_delimited_capture_record[
 
 def _capture_subtree_mask[nodes: List[RegexNode], node_index: Int]() -> Int:
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Or(alternation):
-        var mask = 0
-        comptime for option in range(alternation.count):
-            mask |= _capture_subtree_mask[nodes, alternation.options[option]]()
-        return mask
-    case .Repeat(repeat):
-        return _capture_subtree_mask[nodes, repeat.child]()
-    case .Sequence(sequence):
-        var mask = 0
-        comptime for item in range(sequence.count):
-            mask |= _capture_subtree_mask[nodes, sequence.items[item]]()
-        return mask
-    case .Capture(capture):
-        return (Int(1) << (capture.index - 1)) | _capture_subtree_mask[
-            nodes, capture.child
-        ]()
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return 0
+    comptime match node:
+        case .Or(alternation):
+            var mask = 0
+            comptime for option in range(alternation.count):
+                mask |= _capture_subtree_mask[
+                    nodes, alternation.options[option]
+                ]()
+            return mask
+        case .Repeat(repeat):
+            return _capture_subtree_mask[nodes, repeat.child]()
+        case .Sequence(sequence):
+            var mask = 0
+            comptime for item in range(sequence.count):
+                mask |= _capture_subtree_mask[nodes, sequence.items[item]]()
+            return mask
+        case .Capture(capture):
+            return (Int(1) << (capture.index - 1)) | _capture_subtree_mask[
+                nodes, capture.child
+            ]()
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
+            return 0
 
 
 def _fixed_capture_sequence_item_mask[
@@ -1116,29 +1118,29 @@ def _find_literal_capture_run_alternation[
 
 def _leading_literal_index[nodes: List[RegexNode], node_index: Int]() -> Int:
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(_):
-        return node_index
-    case .Sequence(sequence):
-        comptime for i in range(sequence.count):
-            comptime item_index = sequence.items[i]
-            comptime item = nodes[item_index]
-            comptime __match item:
-            case .Empty(_) | .ZeroWidth(_):
-                pass
-            case .Literal(_):
-                return item_index
-            case .Capture(capture):
-                return _leading_literal_index[nodes, capture.child]()
-            case _:
-                return -1
-        return -1
-    case .Capture(capture):
-        return _leading_literal_index[nodes, capture.child]()
-    case .Empty(_) | .CharClass(_) | .BracketClass(_) | .ZeroWidth(_) | .Or(
-        _
-    ) | .Repeat(_):
-        return -1
+    comptime match node:
+        case .Literal(_):
+            return node_index
+        case .Sequence(sequence):
+            comptime for i in range(sequence.count):
+                comptime item_index = sequence.items[i]
+                comptime item = nodes[item_index]
+                comptime match item:
+                    case .Empty(_) | .ZeroWidth(_):
+                        pass
+                    case .Literal(_):
+                        return item_index
+                    case .Capture(capture):
+                        return _leading_literal_index[nodes, capture.child]()
+                    case _:
+                        return -1
+            return -1
+        case .Capture(capture):
+            return _leading_literal_index[nodes, capture.child]()
+        case .Empty(_) | .CharClass(_) | .BracketClass(_) | .ZeroWidth(_) | .Or(
+            _
+        ) | .Repeat(_):
+            return -1
 
 
 def _alternation_leading_prefix_length[

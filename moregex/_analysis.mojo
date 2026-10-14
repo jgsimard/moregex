@@ -225,46 +225,48 @@ def _sequence_required_literal_index[
 def _required_literal_index[nodes: List[RegexNode], node_index: Int]() -> Int:
     """Return a longest literal required by every match, or `-1`."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(literal):
-        return node_index if literal.value.byte_length() > 0 else -1
-    case .Repeat(repeat):
-        comptime if repeat.minimum > 0:
-            return _required_literal_index[nodes, repeat.child]()
-        return -1
-    case .Sequence(sequence):
-        return _sequence_required_literal_index[nodes, sequence, 0]()
-    case .Capture(capture):
-        return _required_literal_index[nodes, capture.child]()
-    case .Empty(_) | .CharClass(_) | .BracketClass(_) | .ZeroWidth(_) | .Or(_):
-        return -1
+    comptime match node:
+        case .Literal(literal):
+            return node_index if literal.value.byte_length() > 0 else -1
+        case .Repeat(repeat):
+            comptime if repeat.minimum > 0:
+                return _required_literal_index[nodes, repeat.child]()
+            return -1
+        case .Sequence(sequence):
+            return _sequence_required_literal_index[nodes, sequence, 0]()
+        case .Capture(capture):
+            return _required_literal_index[nodes, capture.child]()
+        case .Empty(_) | .CharClass(_) | .BracketClass(_) | .ZeroWidth(_) | .Or(
+            _
+        ):
+            return -1
 
 
 def _one_byte_node_coverage[nodes: List[RegexNode], node_index: Int]() -> Int:
     """Count accepted byte values, or return 257 for a non-byte node."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .CharClass(char_class):
-        comptime if (
-            char_class.kind == CHAR_UNICODE_DOT
-            or char_class.kind == CHAR_UNICODE_DOTALL
-        ):
+    comptime match node:
+        case .CharClass(char_class):
+            comptime if (
+                char_class.kind == CHAR_UNICODE_DOT
+                or char_class.kind == CHAR_UNICODE_DOTALL
+            ):
+                return 257
+            var coverage = 0
+            for value in range(256):
+                if _accepts_class[char_class.kind](value):
+                    coverage += 1
+            return coverage
+        case .BracketClass(bracket):
+            var coverage = 0
+            for value in range(256):
+                if _bracket_accepts[bracket](value):
+                    coverage += 1
+            return coverage
+        case .Empty(_) | .Literal(_) | .ZeroWidth(_) | .Or(_) | .Repeat(
+            _
+        ) | .Sequence(_) | .Capture(_):
             return 257
-        var coverage = 0
-        for value in range(256):
-            if _accepts_class[char_class.kind](value):
-                coverage += 1
-        return coverage
-    case .BracketClass(bracket):
-        var coverage = 0
-        for value in range(256):
-            if _bracket_accepts[bracket](value):
-                coverage += 1
-        return coverage
-    case .Empty(_) | .Literal(_) | .ZeroWidth(_) | .Or(_) | .Repeat(
-        _
-    ) | .Sequence(_) | .Capture(_):
-        return 257
 
 
 def _sequence_required_one_byte_node[
@@ -294,22 +296,22 @@ def _required_one_byte_node_index[
 ]() -> Int:
     """Return the most selective byte class required by every match."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .CharClass(_) | .BracketClass(_):
-        return (
-            node_index if _one_byte_node_coverage[nodes, node_index]()
-            <= 256 else -1
-        )
-    case .Repeat(repeat):
-        comptime if repeat.minimum > 0:
-            return _required_one_byte_node_index[nodes, repeat.child]()
-        return -1
-    case .Sequence(sequence):
-        return _sequence_required_one_byte_node[nodes, sequence, 0, -1]()
-    case .Capture(capture):
-        return _required_one_byte_node_index[nodes, capture.child]()
-    case .Empty(_) | .Literal(_) | .ZeroWidth(_) | .Or(_):
-        return -1
+    comptime match node:
+        case .CharClass(_) | .BracketClass(_):
+            return (
+                node_index if _one_byte_node_coverage[nodes, node_index]()
+                <= 256 else -1
+            )
+        case .Repeat(repeat):
+            comptime if repeat.minimum > 0:
+                return _required_one_byte_node_index[nodes, repeat.child]()
+            return -1
+        case .Sequence(sequence):
+            return _sequence_required_one_byte_node[nodes, sequence, 0, -1]()
+        case .Capture(capture):
+            return _required_one_byte_node_index[nodes, capture.child]()
+        case .Empty(_) | .Literal(_) | .ZeroWidth(_) | .Or(_):
+            return -1
 
 
 @always_inline
@@ -333,30 +335,30 @@ def _node_start_accepts[
 ](value: Int) -> Bool:
     """Return whether `value` can begin a non-empty match of a node."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_) | .ZeroWidth(_):
-        return False
-    case .Literal(literal):
-        comptime if literal.value.byte_length() == 0:
+    comptime match node:
+        case .Empty(_) | .ZeroWidth(_):
             return False
-        return value == Int(literal.value.as_bytes()[0])
-    case .CharClass(char_class):
-        return _accepts_class[char_class.kind](value)
-    case .BracketClass(bracket):
-        return _bracket_accepts[bracket](value)
-    case .Or(alternation):
-        comptime for i in range(alternation.count):
-            if _node_start_accepts[nodes, alternation.options[i]](value):
-                return True
-        return False
-    case .Repeat(repeat):
-        comptime if repeat.maximum == 0:
+        case .Literal(literal):
+            comptime if literal.value.byte_length() == 0:
+                return False
+            return value == Int(literal.value.as_bytes()[0])
+        case .CharClass(char_class):
+            return _accepts_class[char_class.kind](value)
+        case .BracketClass(bracket):
+            return _bracket_accepts[bracket](value)
+        case .Or(alternation):
+            comptime for i in range(alternation.count):
+                if _node_start_accepts[nodes, alternation.options[i]](value):
+                    return True
             return False
-        return _node_start_accepts[nodes, repeat.child](value)
-    case .Sequence(sequence):
-        return _sequence_start_accepts[nodes, sequence, 0](value)
-    case .Capture(capture):
-        return _node_start_accepts[nodes, capture.child](value)
+        case .Repeat(repeat):
+            comptime if repeat.maximum == 0:
+                return False
+            return _node_start_accepts[nodes, repeat.child](value)
+        case .Sequence(sequence):
+            return _sequence_start_accepts[nodes, sequence, 0](value)
+        case .Capture(capture):
+            return _node_start_accepts[nodes, capture.child](value)
 
 
 @always_inline
@@ -381,34 +383,34 @@ def _node_start_mask[
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
     """Vector form of `_node_start_accepts` for candidate discovery."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_):
-        return SIMD[.bool, width](fill=False)
-    case .Literal(literal):
-        comptime if literal.value.byte_length() == 0:
+    comptime match node:
+        case .Empty(_):
             return SIMD[.bool, width](fill=False)
-        return values.eq(SIMD[.uint8, width](literal.value.as_bytes()[0]))
-    case .CharClass(char_class):
-        return _class_mask[char_class.kind, width](values)
-    case .BracketClass(bracket):
-        return _bracket_mask[bracket, width](values)
-    case .ZeroWidth(_):
-        return SIMD[.bool, width](fill=False)
-    case .Or(alternation):
-        var accepted = SIMD[.bool, width](fill=False)
-        comptime for i in range(alternation.count):
-            accepted |= _node_start_mask[nodes, alternation.options[i], width](
-                values
-            )
-        return accepted
-    case .Repeat(repeat):
-        comptime if repeat.maximum == 0:
+        case .Literal(literal):
+            comptime if literal.value.byte_length() == 0:
+                return SIMD[.bool, width](fill=False)
+            return values.eq(SIMD[.uint8, width](literal.value.as_bytes()[0]))
+        case .CharClass(char_class):
+            return _class_mask[char_class.kind, width](values)
+        case .BracketClass(bracket):
+            return _bracket_mask[bracket, width](values)
+        case .ZeroWidth(_):
             return SIMD[.bool, width](fill=False)
-        return _node_start_mask[nodes, repeat.child, width](values)
-    case .Sequence(sequence):
-        return _sequence_start_mask[nodes, sequence, 0, width](values)
-    case .Capture(capture):
-        return _node_start_mask[nodes, capture.child, width](values)
+        case .Or(alternation):
+            var accepted = SIMD[.bool, width](fill=False)
+            comptime for i in range(alternation.count):
+                accepted |= _node_start_mask[
+                    nodes, alternation.options[i], width
+                ](values)
+            return accepted
+        case .Repeat(repeat):
+            comptime if repeat.maximum == 0:
+                return SIMD[.bool, width](fill=False)
+            return _node_start_mask[nodes, repeat.child, width](values)
+        case .Sequence(sequence):
+            return _sequence_start_mask[nodes, sequence, 0, width](values)
+        case .Capture(capture):
+            return _node_start_mask[nodes, capture.child, width](values)
 
 
 def _bracket_coverage_upper_bound[node: BracketClassNode]() -> Int:
@@ -423,44 +425,46 @@ def _start_filter_is_selective[
 ]() -> Bool:
     """Conservatively select roots worth SIMD filtering before matching."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(literal):
-        return literal.value.byte_length() > 0
-    case .CharClass(char_class):
-        return (
-            char_class.kind == CHAR_ASCII_DIGIT
-            or char_class.kind == CHAR_ASCII_WHITESPACE
-        )
-    case .BracketClass(bracket):
-        comptime coverage = min(256, _bracket_coverage_upper_bound[bracket]())
-        comptime if bracket.negated:
-            return 256 - coverage <= 32
-        return coverage <= 32
-    case .Or(alternation):
-        comptime if alternation.count == 0:
-            return False
-        comptime for i in range(alternation.count):
-            comptime if not _start_filter_is_selective[
-                nodes, alternation.options[i]
-            ]():
+    comptime match node:
+        case .Literal(literal):
+            return literal.value.byte_length() > 0
+        case .CharClass(char_class):
+            return (
+                char_class.kind == CHAR_ASCII_DIGIT
+                or char_class.kind == CHAR_ASCII_WHITESPACE
+            )
+        case .BracketClass(bracket):
+            comptime coverage = min(
+                256, _bracket_coverage_upper_bound[bracket]()
+            )
+            comptime if bracket.negated:
+                return 256 - coverage <= 32
+            return coverage <= 32
+        case .Or(alternation):
+            comptime if alternation.count == 0:
                 return False
-        return True
-    case .Repeat(repeat):
-        return (
-            repeat.minimum > 0
-            and _start_filter_is_selective[nodes, repeat.child]()
-        )
-    case .Sequence(sequence):
-        comptime if sequence.count == 0:
+            comptime for i in range(alternation.count):
+                comptime if not _start_filter_is_selective[
+                    nodes, alternation.options[i]
+                ]():
+                    return False
+            return True
+        case .Repeat(repeat):
+            return (
+                repeat.minimum > 0
+                and _start_filter_is_selective[nodes, repeat.child]()
+            )
+        case .Sequence(sequence):
+            comptime if sequence.count == 0:
+                return False
+            comptime first = sequence.items[0]
+            comptime if _minimum_node_width[nodes, first]() == 0:
+                return False
+            return _start_filter_is_selective[nodes, first]()
+        case .Capture(capture):
+            return _start_filter_is_selective[nodes, capture.child]()
+        case .Empty(_) | .ZeroWidth(_):
             return False
-        comptime first = sequence.items[0]
-        comptime if _minimum_node_width[nodes, first]() == 0:
-            return False
-        return _start_filter_is_selective[nodes, first]()
-    case .Capture(capture):
-        return _start_filter_is_selective[nodes, capture.child]()
-    case .Empty(_) | .ZeroWidth(_):
-        return False
 
 
 def _sequence_has_generic_backtracking_risk[
@@ -487,24 +491,24 @@ def _has_generic_backtracking_risk[
 ]() -> Bool:
     """Identify fallback shapes that can retry a variable repeat per start."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Or(alternation):
-        comptime for i in range(alternation.count):
-            comptime if _has_generic_backtracking_risk[
-                nodes, alternation.options[i]
-            ]():
-                return True
-        return False
-    case .Repeat(repeat):
-        return _has_generic_backtracking_risk[nodes, repeat.child]()
-    case .Sequence(sequence):
-        return _sequence_has_generic_backtracking_risk[nodes, sequence, 0]()
-    case .Capture(capture):
-        return _has_generic_backtracking_risk[nodes, capture.child]()
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return False
+    comptime match node:
+        case .Or(alternation):
+            comptime for i in range(alternation.count):
+                comptime if _has_generic_backtracking_risk[
+                    nodes, alternation.options[i]
+                ]():
+                    return True
+            return False
+        case .Repeat(repeat):
+            return _has_generic_backtracking_risk[nodes, repeat.child]()
+        case .Sequence(sequence):
+            return _sequence_has_generic_backtracking_risk[nodes, sequence, 0]()
+        case .Capture(capture):
+            return _has_generic_backtracking_risk[nodes, capture.child]()
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
+            return False
 
 
 def _is_ascii_fold_pair[node: BracketClassNode]() -> Bool:
@@ -1731,49 +1735,49 @@ def _fixed_node_mask[
 ](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
     """Evaluate `width` fixed-width match starts in parallel."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_):
-        return SIMD[.bool, width](fill=True)
-    case .ZeroWidth(_):
-        return SIMD[.bool, width](fill=False)
-    case .Literal(literal):
-        var matched = SIMD[.bool, width](fill=True)
-        comptime for i in range(literal.value.byte_length()):
+    comptime match node:
+        case .Empty(_):
+            return SIMD[.bool, width](fill=True)
+        case .ZeroWidth(_):
+            return SIMD[.bool, width](fill=False)
+        case .Literal(literal):
+            var matched = SIMD[.bool, width](fill=True)
+            comptime for i in range(literal.value.byte_length()):
+                var values = text.unsafe_ptr().unsafe_load[
+                    width=width, alignment=1
+                ](block_start + pattern_offset + i)
+                comptime expected = literal.value.as_bytes()[i]
+                matched &= values.eq(SIMD[.uint8, width](expected))
+            return matched
+        case .CharClass(char_class):
             var values = text.unsafe_ptr().unsafe_load[
                 width=width, alignment=1
-            ](block_start + pattern_offset + i)
-            comptime expected = literal.value.as_bytes()[i]
-            matched &= values.eq(SIMD[.uint8, width](expected))
-        return matched
-    case .CharClass(char_class):
-        var values = text.unsafe_ptr().unsafe_load[width=width, alignment=1](
-            block_start + pattern_offset
-        )
-        return _class_mask[char_class.kind, width](values)
-    case .BracketClass(bracket):
-        var values = text.unsafe_ptr().unsafe_load[width=width, alignment=1](
-            block_start + pattern_offset
-        )
-        return _bracket_mask[bracket, width](values)
-    case .Or(alternation):
-        var matched = SIMD[.bool, width](fill=False)
-        comptime for i in range(alternation.count):
-            matched |= _fixed_node_mask[
-                nodes, alternation.options[i], width, pattern_offset
+            ](block_start + pattern_offset)
+            return _class_mask[char_class.kind, width](values)
+        case .BracketClass(bracket):
+            var values = text.unsafe_ptr().unsafe_load[
+                width=width, alignment=1
+            ](block_start + pattern_offset)
+            return _bracket_mask[bracket, width](values)
+        case .Or(alternation):
+            var matched = SIMD[.bool, width](fill=False)
+            comptime for i in range(alternation.count):
+                matched |= _fixed_node_mask[
+                    nodes, alternation.options[i], width, pattern_offset
+                ](text, block_start)
+            return matched
+        case .Repeat(repeat):
+            return _fixed_repeat_mask[nodes, repeat, width, 0, pattern_offset](
+                text, block_start
+            )
+        case .Sequence(sequence):
+            return _fixed_sequence_mask[
+                nodes, sequence, width, 0, pattern_offset
             ](text, block_start)
-        return matched
-    case .Repeat(repeat):
-        return _fixed_repeat_mask[nodes, repeat, width, 0, pattern_offset](
-            text, block_start
-        )
-    case .Sequence(sequence):
-        return _fixed_sequence_mask[nodes, sequence, width, 0, pattern_offset](
-            text, block_start
-        )
-    case .Capture(capture):
-        return _fixed_node_mask[nodes, capture.child, width, pattern_offset](
-            text, block_start
-        )
+        case .Capture(capture):
+            return _fixed_node_mask[
+                nodes, capture.child, width, pattern_offset
+            ](text, block_start)
 
 
 @always_inline
@@ -1801,44 +1805,46 @@ def _fixed_offset_mask[
 ](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
     """Evaluate one byte predicate at a fixed offset for many starts."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(literal):
-        var values = text.unsafe_ptr().unsafe_load[width=width, alignment=1](
-            block_start + target
-        )
-        return values.eq(SIMD[.uint8, width](literal.value.as_bytes()[target]))
-    case .CharClass(char_class):
-        var values = text.unsafe_ptr().unsafe_load[width=width, alignment=1](
-            block_start
-        )
-        return _class_mask[char_class.kind, width](values)
-    case .BracketClass(bracket):
-        var values = text.unsafe_ptr().unsafe_load[width=width, alignment=1](
-            block_start
-        )
-        return _bracket_mask[bracket, width](values)
-    case .Or(alternation):
-        var accepted = SIMD[.bool, width](fill=False)
-        comptime for i in range(alternation.count):
-            accepted |= _fixed_offset_mask[
-                nodes, alternation.options[i], width, target
+    comptime match node:
+        case .Literal(literal):
+            var values = text.unsafe_ptr().unsafe_load[
+                width=width, alignment=1
+            ](block_start + target)
+            return values.eq(
+                SIMD[.uint8, width](literal.value.as_bytes()[target])
+            )
+        case .CharClass(char_class):
+            var values = text.unsafe_ptr().unsafe_load[
+                width=width, alignment=1
+            ](block_start)
+            return _class_mask[char_class.kind, width](values)
+        case .BracketClass(bracket):
+            var values = text.unsafe_ptr().unsafe_load[
+                width=width, alignment=1
+            ](block_start)
+            return _bracket_mask[bracket, width](values)
+        case .Or(alternation):
+            var accepted = SIMD[.bool, width](fill=False)
+            comptime for i in range(alternation.count):
+                accepted |= _fixed_offset_mask[
+                    nodes, alternation.options[i], width, target
+                ](text, block_start)
+            return accepted
+        case .Repeat(repeat):
+            comptime child_width = _fixed_node_width[nodes, repeat.child]()
+            return _fixed_offset_mask[
+                nodes, repeat.child, width, target % child_width
+            ](text, block_start + target - target % child_width)
+        case .Sequence(sequence):
+            return _fixed_sequence_offset_mask[
+                nodes, sequence, width, 0, target
             ](text, block_start)
-        return accepted
-    case .Repeat(repeat):
-        comptime child_width = _fixed_node_width[nodes, repeat.child]()
-        return _fixed_offset_mask[
-            nodes, repeat.child, width, target % child_width
-        ](text, block_start + target - target % child_width)
-    case .Sequence(sequence):
-        return _fixed_sequence_offset_mask[nodes, sequence, width, 0, target](
-            text, block_start
-        )
-    case .Capture(capture):
-        return _fixed_offset_mask[nodes, capture.child, width, target](
-            text, block_start
-        )
-    case .Empty(_) | .ZeroWidth(_):
-        return SIMD[.bool, width](fill=False)
+        case .Capture(capture):
+            return _fixed_offset_mask[nodes, capture.child, width, target](
+                text, block_start
+            )
+        case .Empty(_) | .ZeroWidth(_):
+            return SIMD[.bool, width](fill=False)
 
 
 def _fixed_sequence_offset_coverage[
@@ -1861,30 +1867,32 @@ def _fixed_offset_coverage[
 ]() -> Int:
     """Return the accepted-byte count for one fixed expression offset."""
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Literal(_):
-        return 1
-    case .CharClass(_) | .BracketClass(_):
-        return _one_byte_node_coverage[nodes, node_index]()
-    case .Or(alternation):
-        var coverage = 257
-        comptime for i in range(alternation.count):
-            coverage = min(
-                coverage,
-                _fixed_offset_coverage[nodes, alternation.options[i], target](),
-            )
-        return coverage
-    case .Repeat(repeat):
-        comptime child_width = _fixed_node_width[nodes, repeat.child]()
-        return _fixed_offset_coverage[
-            nodes, repeat.child, target % child_width
-        ]()
-    case .Sequence(sequence):
-        return _fixed_sequence_offset_coverage[nodes, sequence, 0, target]()
-    case .Capture(capture):
-        return _fixed_offset_coverage[nodes, capture.child, target]()
-    case .Empty(_) | .ZeroWidth(_):
-        return 257
+    comptime match node:
+        case .Literal(_):
+            return 1
+        case .CharClass(_) | .BracketClass(_):
+            return _one_byte_node_coverage[nodes, node_index]()
+        case .Or(alternation):
+            var coverage = 257
+            comptime for i in range(alternation.count):
+                coverage = min(
+                    coverage,
+                    _fixed_offset_coverage[
+                        nodes, alternation.options[i], target
+                    ](),
+                )
+            return coverage
+        case .Repeat(repeat):
+            comptime child_width = _fixed_node_width[nodes, repeat.child]()
+            return _fixed_offset_coverage[
+                nodes, repeat.child, target % child_width
+            ]()
+        case .Sequence(sequence):
+            return _fixed_sequence_offset_coverage[nodes, sequence, 0, target]()
+        case .Capture(capture):
+            return _fixed_offset_coverage[nodes, capture.child, target]()
+        case .Empty(_) | .ZeroWidth(_):
+            return 257
 
 
 @fieldwise_init
@@ -1900,24 +1908,24 @@ def _fixed_node_contains_alternation[
     nodes: List[RegexNode], node_index: Int
 ]() -> Bool:
     comptime node = nodes[node_index]
-    comptime __match node:
-    case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
-        _
-    ) | .ZeroWidth(_):
-        return False
-    case .Or:
-        return True
-    case .Repeat(repeat):
-        return _fixed_node_contains_alternation[nodes, repeat.child]()
-    case .Sequence(sequence):
-        comptime for i in range(sequence.count):
-            comptime if _fixed_node_contains_alternation[
-                nodes, sequence.items[i]
-            ]():
-                return True
-        return False
-    case .Capture(capture):
-        return _fixed_node_contains_alternation[nodes, capture.child]()
+    comptime match node:
+        case .Empty(_) | .Literal(_) | .CharClass(_) | .BracketClass(
+            _
+        ) | .ZeroWidth(_):
+            return False
+        case .Or:
+            return True
+        case .Repeat(repeat):
+            return _fixed_node_contains_alternation[nodes, repeat.child]()
+        case .Sequence(sequence):
+            comptime for i in range(sequence.count):
+                comptime if _fixed_node_contains_alternation[
+                    nodes, sequence.items[i]
+                ]():
+                    return True
+            return False
+        case .Capture(capture):
+            return _fixed_node_contains_alternation[nodes, capture.child]()
 
 
 def _fixed_prefilter_plan[
