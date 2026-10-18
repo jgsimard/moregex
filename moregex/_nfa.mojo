@@ -1,4 +1,4 @@
-"""Allocation-free Boolean NFA execution and cached-program adapters."""
+"""Allocation-free NFA execution with on-demand compile-time programs."""
 
 from std.bit import count_trailing_zeros
 from std.utils import StaticTuple
@@ -9,6 +9,7 @@ from ._result import (
     _MatchSpan,
 )
 from ._syntax import Regex
+from ._width import _is_start_anchored
 
 from ._nfa_ordered import (
     _nfa_ordered_capture_match,
@@ -21,6 +22,7 @@ from ._nfa_program import (
     _NFA_BYTE,
     _NFA_CLASS,
     _NFAInstruction,
+    _compile_program,
     _instruction_accepts,
     _runtime_assertion_matches,
     _NFA_MATCH,
@@ -317,11 +319,10 @@ def _nfa_search_from[
     regex: Regex
 ](text: ImmStringSpan, search_start: Int) -> Bool:
     """Search from an input offset with a stack-resident Thompson NFA."""
-    comptime start_pc = regex.nfa.start
-    comptime state_count = len(regex.nfa.instructions)
-    comptime program = _materialize_program[
-        regex.nfa.instructions, state_count
-    ]()
+    comptime compiled = _compile_program(regex.nodes, regex.root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
     comptime if state_count <= 64:
         comptime if not _program_has_assertions[state_count, program]():
             return _nfa_search_static_bits[
@@ -387,12 +388,11 @@ def _nfa_find_from[
     regex: Regex
 ](text: ImmStringSpan, search_start: Int) -> Optional[_MatchSpan]:
     """Return the ordered leftmost-first match at or after an input offset."""
-    comptime start_pc = regex.nfa.start
-    comptime state_count = len(regex.nfa.instructions)
-    comptime program = _materialize_program[
-        regex.nfa.instructions, state_count
-    ]()
-    comptime unanchored = not regex.nfa.start_anchored
+    comptime compiled = _compile_program(regex.nodes, regex.root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
     return _nfa_ordered_match[state_count, program, start_pc, unanchored](
         text, search_start
     )
@@ -403,11 +403,10 @@ def _nfa_match_at[
     regex: Regex
 ](text: ImmStringSpan, start: Int) -> Optional[_MatchSpan]:
     """Try the ordered NFA at one exact byte offset."""
-    comptime start_pc = regex.nfa.start
-    comptime state_count = len(regex.nfa.instructions)
-    comptime program = _materialize_program[
-        regex.nfa.instructions, state_count
-    ]()
+    comptime compiled = _compile_program(regex.nodes, regex.root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
     return _nfa_ordered_match[state_count, program, start_pc, False](
         text, start
     )
@@ -420,12 +419,11 @@ def _nfa_find_captures[
     _CaptureOffsets[regex.capture_count]
 ]:
     """Return the next match with capture offsets from the preserved AST."""
-    comptime start_pc = regex.capture_nfa.start
-    comptime state_count = len(regex.capture_nfa.instructions)
-    comptime program = _materialize_program[
-        regex.capture_nfa.instructions, state_count
-    ]()
-    comptime unanchored = not regex.nfa.start_anchored
+    comptime compiled = _compile_program(regex.nodes, regex.capture_root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
     return _nfa_ordered_capture_match[
         state_count, regex.capture_count, program, start_pc, unanchored
     ](text, search_start)
@@ -436,12 +434,11 @@ def _nfa_find_capture_participation[
     regex: Regex
 ](text: ImmStringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
     """Return the next match and its capture participation bit mask."""
-    comptime start_pc = regex.capture_nfa.start
-    comptime state_count = len(regex.capture_nfa.instructions)
-    comptime program = _materialize_program[
-        regex.capture_nfa.instructions, state_count
-    ]()
-    comptime unanchored = not regex.nfa.start_anchored
+    comptime compiled = _compile_program(regex.nodes, regex.capture_root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
+    comptime unanchored = not _is_start_anchored[regex.nodes, regex.root]()
     return _nfa_ordered_capture_participation[
         state_count, program, start_pc, unanchored
     ](text, search_start)
@@ -454,11 +451,10 @@ def _nfa_match_captures_at[
     _CaptureOffsets[regex.capture_count]
 ]:
     """Try a capture match at one exact byte offset."""
-    comptime start_pc = regex.capture_nfa.start
-    comptime state_count = len(regex.capture_nfa.instructions)
-    comptime program = _materialize_program[
-        regex.capture_nfa.instructions, state_count
-    ]()
+    comptime compiled = _compile_program(regex.nodes, regex.capture_root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
     return _nfa_ordered_capture_match[
         state_count, regex.capture_count, program, start_pc, False
     ](text, start)
@@ -467,11 +463,10 @@ def _nfa_match_captures_at[
 @always_inline
 def _nfa_full_match[regex: Regex](text: ImmStringSpan) -> Bool:
     """Match the complete input with ordered Thompson-NFA semantics."""
-    comptime start_pc = regex.nfa.start
-    comptime state_count = len(regex.nfa.instructions)
-    comptime program = _materialize_program[
-        regex.nfa.instructions, state_count
-    ]()
+    comptime compiled = _compile_program(regex.nodes, regex.root)
+    comptime start_pc = compiled[1]
+    comptime state_count = len(compiled[0])
+    comptime program = _materialize_program[compiled[0], state_count]()
     # Match priority cannot change a Boolean full-match result. Small NFAs can
     # therefore use one bit per state instead of carrying ordered thread starts.
     comptime if state_count <= 64:
@@ -480,10 +475,11 @@ def _nfa_full_match[regex: Regex](text: ImmStringSpan) -> Bool:
         return _nfa_full_bits[state_count, program, start_pc](text)
     # Large programs retain the ordered executor and an explicit strict-end
     # assertion because their state set does not fit in one machine word.
-    comptime ordered_start_pc = regex.strict_nfa.start
-    comptime ordered_state_count = len(regex.strict_nfa.instructions)
+    comptime strict = _compile_program(regex.nodes, regex.root, True)
+    comptime ordered_start_pc = strict[1]
+    comptime ordered_state_count = len(strict[0])
     comptime ordered_program = _materialize_program[
-        regex.strict_nfa.instructions, ordered_state_count
+        strict[0], ordered_state_count
     ]()
     var result = _nfa_ordered_match[
         ordered_state_count, ordered_program, ordered_start_pc, False

@@ -166,6 +166,17 @@ def test_ordered_nfa_payload_equivalence() raises:
     assert_equal(lazy_offsets.ends[2], 2)
 
 
+def test_large_ordered_full_match() raises:
+    # This exceeds the 64-state Boolean executor and needs strict-end path
+    # exploration, including reconsidering the shorter first alternative.
+    comptime repeated = Regex("(a|ab){40}")
+    var text = "ab" * 40
+    assert_nfa_full[repeated](text, True)
+    assert_nfa_full[repeated](text + "x", False)
+    assert_nfa_full[repeated](text + "\n", False)
+    assert_nfa_full[repeated]("ab" * 39, False)
+
+
 def test_unicode_nfa_execution() raises:
     # Unicode dot lowers to disjoint 1-4-byte Thompson branches and therefore
     # participates in the same ordered continuation semantics.

@@ -67,5 +67,33 @@ def test_bracket_ranges_are_canonical() raises:
     )
 
 
+def test_structural_equality_across_node_cases() raises:
+    # Exercise all nine AST cases, including every mismatched case pair.
+    var patterns: List[String] = [
+        "",
+        "a",
+        "\\d",
+        "[a-z]",
+        "^",
+        "a|bc",
+        "a+",
+        "a\\d",
+        "(a)",
+    ]
+    for i in range(len(patterns)):
+        var left = Regex(patterns[i])
+        for j in range(len(patterns)):
+            var right = Regex(patterns[j])
+            assert_equal(
+                _same_ast_node(
+                    left.nodes,
+                    left.capture_root,
+                    right.nodes,
+                    right.capture_root,
+                ),
+                i == j,
+            )
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
