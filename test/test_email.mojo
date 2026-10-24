@@ -95,5 +95,5 @@ def test_uri_or_email_alternation() raises:
     assert_false(search[uri_or_email]("there is no address here"))
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

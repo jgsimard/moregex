@@ -227,5 +227,5 @@ def test_large_literal_alternation_search() raises:
     assert_public_search[alternatives]("x" * 63 + "grault", True)
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -95,5 +95,5 @@ def test_structural_equality_across_node_cases() raises:
             )
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

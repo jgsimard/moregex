@@ -587,5 +587,5 @@ def test_counting_execution_plans() raises:
     assert_true(matches_runtime(runtime, "az"))
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

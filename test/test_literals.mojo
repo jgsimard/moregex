@@ -39,5 +39,5 @@ def test_runtime_literals() raises:
     assert_false(matches_runtime(bounded, "_az"))
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
