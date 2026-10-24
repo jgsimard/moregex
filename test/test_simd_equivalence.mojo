@@ -49,5 +49,5 @@ def test_complement_class_simd_equivalence() raises:
     check_class[CHAR_ASCII_NON_WHITESPACE]()
 
 
-def main() raises:
+def run_tests[_discovery: Bool = True]() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

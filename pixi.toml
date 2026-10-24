@@ -28,7 +28,7 @@ bench-safere-test = "bash scripts/run_safere_benchmarks.sh --verify"
 bench-safere = "bash scripts/run_safere_benchmarks.sh"
 
 [dependencies]
-mojo = ">=1.2.0.dev2026101705,<2"
+mojo = ">=1.3.0.dev2026102305,<2"
 
 [feature.dev.dependencies]
 vectorscan = ">=5.4.13,<6"
