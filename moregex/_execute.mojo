@@ -16,6 +16,11 @@ from ._common import (
     CLASS_TAIL_SIMD_WIDTH,
     _match_checksum,
 )
+from ._delimited import (
+    _count_literal_delimited,
+    _find_literal_delimited,
+    _literal_delimited_plan,
+)
 
 from ._analysis import (
     _all_casefold_prefixed_sequence_options,
@@ -162,6 +167,9 @@ from ._utf8_runs import (
 
 @always_inline
 def _search_planned[regex: Regex](text: ImmStringSpan) -> Bool:
+    comptime delimited = _literal_delimited_plan[regex]()
+    comptime if delimited:
+        return Bool(_find_literal_delimited[delimited.unsafe_value()](text))
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
         comptime if _static_source_is_root_literal[regex]():
@@ -315,6 +323,11 @@ def _count_nfa[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
 
 @always_inline
 def _count_planned[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+    comptime delimited = _literal_delimited_plan[regex]()
+    comptime if delimited:
+        return _count_literal_delimited[delimited.unsafe_value(), sum_spans](
+            text
+        )
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
         return _count_literal_root[regex, sum_spans](text)

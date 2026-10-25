@@ -37,6 +37,7 @@ from ._nfa import (
     _nfa_match_captures_at,
 )
 from ._syntax import Regex
+from ._delimited import _find_literal_delimited, _literal_delimited_plan
 
 
 struct RegexMatch[capture_count: Int](ImplicitlyCopyable):
@@ -1231,6 +1232,21 @@ def find_span[
     var search_start = max(0, start)
     if search_start > text.byte_length():
         return None
+    comptime delimited = _literal_delimited_plan[regex]()
+    comptime if delimited:
+        comptime plan = delimited.unsafe_value()
+        var next = _find_literal_delimited[plan](text, search_start)
+        if not next:
+            return None
+        var found = next.unsafe_value()
+        var starts = StaticTuple[Int, regex.capture_count + 1]()
+        var ends = StaticTuple[Int, regex.capture_count + 1]()
+        starts[0] = found.start
+        ends[0] = found.end
+        comptime if regex.capture_count == 1:
+            starts[1] = found.start + plan.prefix.byte_length()
+            ends[1] = found.end - plan.suffix.byte_length()
+        return RegexMatch[regex.capture_count](starts, ends)
     comptime if regex.capture_count > 0:
         comptime if _is_delimited_capture_record[regex]():
             return _find_delimited_capture_record[regex](text, search_start)

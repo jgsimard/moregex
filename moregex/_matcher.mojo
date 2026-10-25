@@ -16,10 +16,14 @@ from ._nfa import _nfa_full_match
 from ._semantics import _nfa_full_semantics_required
 
 from ._ast_matcher import _match_node
+from ._delimited import _literal_delimited_plan, _matches_literal_delimited
 
 
 @always_inline
 def _matches_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
+    comptime delimited = _literal_delimited_plan[regex]()
+    comptime if delimited:
+        return _matches_literal_delimited[delimited.unsafe_value()](text)
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[RepeatNode]():
         comptime repeat = root[RepeatNode]
