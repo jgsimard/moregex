@@ -1,0 +1,26 @@
+# Install source so consumers compile patterns with their own Mojo compiler.
+# Precompiled Mojo packages embed the compiler version used to create them.
+context:
+  version: "0.1.0"
+
+package:
+  name: moregex
+  version: ${{ version }}
+
+source:
+  path: moregex
+  target_directory: moregex
+
+build:
+  script:
+    - mkdir -p "$PREFIX/lib/mojo"
+    - cp -R moregex "$PREFIX/lib/mojo/"
+
+requirements:
+  run:
+    - mojo ==1.2.0
+
+about:
+  homepage: https://github.com/jgsimard/moregex
+  repository: https://github.com/jgsimard/moregex
+  summary: Compile-time regular expressions for Mojo

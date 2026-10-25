@@ -7,6 +7,20 @@ or greedy/lazy giveback.
 
 Inspired by Evan Ovadia's [compile-time regex experiment](https://verdagon.dev/blog/impossible-optimization).
 
+## Install in another project
+
+```toml
+[workspace]
+name = "my-library"
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+platforms = ["linux-64"]
+preview = ["pixi-build"]
+
+[dependencies]
+moregex = { git = "https://github.com/jgsimard/moregex.git", branch = "main" }
+```
+
+Run `pixi install` then use.
 ## Usage
 
 ```mojo
