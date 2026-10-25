@@ -2,8 +2,6 @@
 .pixi/*
 !.pixi/config.toml
 build/
-bench/cross_language/target/
 __pycache__/
 *.pyc
-bench/*
 .vscode/*

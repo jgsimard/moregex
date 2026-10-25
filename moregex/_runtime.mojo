@@ -1,4 +1,4 @@
-"""Reference runtime AST interpreter used by tests and benchmarks."""
+"""Reference runtime AST interpreter used by tests."""
 
 from ._ast import CHAR_UNICODE_DOT, CHAR_UNICODE_DOTALL, RegexNode
 from ._syntax import Regex

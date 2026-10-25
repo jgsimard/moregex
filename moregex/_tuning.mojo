@@ -1,4 +1,4 @@
-"""Central performance thresholds validated by the benchmark suite."""
+"""Central performance thresholds for regex execution."""
 
 # Literal search strategies become worthwhile only after startup cost is
 # amortized over a moderately large subject.

@@ -23,7 +23,7 @@ def test_escaped_literals() raises:
 
 
 def test_runtime_literals() raises:
-    # The runtime interpreter is the benchmark baseline and must agree.
+    # The reference runtime interpreter must agree.
     var runtime_literal = Regex("hello")
     assert_true(matches_runtime(runtime_literal, "hello"))
     assert_false(matches_runtime(runtime_literal, "hell"))
