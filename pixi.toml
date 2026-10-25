@@ -3,12 +3,12 @@ authors = ["jgsimard <jeangab23@gmail.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "moregex"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "0.1.1"
 preview = ["pixi-build"]
 
 [package]
 name = "moregex"
-version = "0.1.0"
+version = "0.1.1"
 
 [package.build]
 backend = { name = "pixi-build-rattler-build", version = ">=0.3.13" }

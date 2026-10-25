@@ -1,7 +1,7 @@
 # Install source so consumers compile patterns with their own Mojo compiler.
 # Precompiled Mojo packages embed the compiler version used to create them.
 context:
-  version: "0.1.0"
+  version: "0.1.1"
 
 package:
   name: moregex
