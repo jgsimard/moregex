@@ -2,13 +2,14 @@
 
 from std.testing import TestSuite, assert_equal
 
-from moregex import Regex
-from moregex._common import _match_checksum
+from moregex import Regex, matches
+from moregex._common import CLASS_SIMD_WIDTH, _match_checksum
 from moregex._matcher import _match_node
 from moregex._execute import _count_planned, _search_planned
+from moregex._nfa import _nfa_full_match, _nfa_match_at
 
 
-def reference_count[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+def reference_count[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     """Count with the original match-at-every-position fallback algorithm."""
     var total = 0
     var start = 0
@@ -23,7 +24,7 @@ def reference_count[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
     return total
 
 
-def reference_search[regex: Regex](text: ImmStringSpan) -> Bool:
+def reference_search[regex: Regex](text: StringSpan) -> Bool:
     for start in range(text.byte_length() + 1):
         if _match_node[regex.nodes, regex.root](text, start):
             return True
@@ -163,6 +164,65 @@ def test_alternation_fallback_equivalence() raises:
 
     comptime greedy_complement = Regex(".*[^A-Z]|[A-Z]")
     assert_fallback_equivalent[greedy_complement]("lower Z tail\nABC")
+
+
+def assert_ast_nfa_equivalent[
+    regex: Regex
+](text: StringSpan, start: Int) raises:
+    var actual = _match_node[regex.nodes, regex.root](text, start)
+    var expected = _nfa_match_at[regex](text, start)
+    assert_equal(Bool(actual), Bool(expected))
+    if actual and expected:
+        assert_equal(
+            actual.unsafe_value().consumed(),
+            expected.unsafe_value().consumed(),
+        )
+
+
+def test_generic_byte_run_boundaries() raises:
+    # Compare against the independent ordered NFA at every SIMD lane and
+    # several unaligned starts, both at a rejecting byte and at the span end.
+    comptime greedy = Regex("[a-z]+")
+    comptime bounded = Regex("[a-z]{2,67}")
+    comptime lazy = Regex("[a-z]{2,67}?")
+    comptime long_lazy = Regex("[a-z]{65,67}?")
+    comptime giveback = Regex("[a-z]{2,67}a!")
+    comptime negated = Regex("[^!]*!")
+    comptime dot = Regex(".*!")
+    for start in range(4):
+        for length in range(2 * CLASS_SIMD_WIDTH + 5):
+            var text = "#" * start + "a" * length + "!tail"
+            var span = text[byte = 0 : text.byte_length()]
+            assert_ast_nfa_equivalent[greedy](span, start)
+            assert_ast_nfa_equivalent[bounded](span, start)
+            assert_ast_nfa_equivalent[lazy](span, start)
+            assert_ast_nfa_equivalent[long_lazy](span, start)
+            assert_ast_nfa_equivalent[giveback](span, start)
+            assert_ast_nfa_equivalent[negated](span, start)
+            assert_ast_nfa_equivalent[dot](span, start)
+            var truncated = span[byte = 0 : start + length]
+            assert_ast_nfa_equivalent[greedy](truncated, start)
+            assert_ast_nfa_equivalent[bounded](truncated, start)
+            assert_ast_nfa_equivalent[negated](truncated, start)
+
+
+def test_generic_byte_run_semantics() raises:
+    comptime byte_dot = Regex(".+!")
+    comptime unicode_dot = Regex(".+!", unicode=True)
+    comptime dotall = Regex("(?s).+!")
+    comptime lazy_suffix = Regex("[a-z]+?a!")
+    comptime empty = Regex("[a-z]*")
+    var cases: List[String] = ["", "!", "aaa!", "a" * 130 + "!", "a\na!", "é💩!"]
+    for text in cases:
+        var span = text[byte = 0 : text.byte_length()]
+        assert_ast_nfa_equivalent[byte_dot](span, 0)
+        # Variable-width Unicode repeats use the NFA through public dispatch.
+        assert_equal(
+            matches[unicode_dot](text), _nfa_full_match[unicode_dot](span)
+        )
+        assert_ast_nfa_equivalent[dotall](span, 0)
+        assert_ast_nfa_equivalent[lazy_suffix](span, 0)
+        assert_ast_nfa_equivalent[empty](span, 0)
 
 
 def run_tests[_discovery: Bool = True]() raises:

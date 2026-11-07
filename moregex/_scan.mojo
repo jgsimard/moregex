@@ -23,7 +23,7 @@ from ._byte_scan import _contains_one_byte_node
 @always_inline
 def _scan_generic[
     regex: Regex, sum_spans: Bool, stop_after_first: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Run the shared filtered candidate scan for search and aggregation."""
     comptime plan = _execution_plan[regex]()
     comptime if plan.required_literal_index >= 0:

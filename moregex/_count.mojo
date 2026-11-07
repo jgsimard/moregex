@@ -36,7 +36,7 @@ from ._ast_matcher import (
 @always_inline
 def _count_leading_class_literal[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Find a required literal, then extend variable classes from that hit."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime leading_repeat = regex.nodes[sequence.items[0]][RepeatNode]
@@ -91,7 +91,7 @@ def _count_leading_class_literal[
 @always_inline
 def _count_adjacent_dot_stars_around_literal[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count `.*.*literal.*` once per matching line in linear time."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime literal = regex.nodes[sequence.items[2]][LiteralNode]
@@ -116,7 +116,7 @@ def _count_adjacent_dot_stars_around_literal[
 @always_inline
 def _count_greedy_dot_complement_alternation[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count `.*[^class]|[class]` in one SIMD pass instead of quadratically."""
     var length = text.byte_length()
     comptime if sum_spans:
@@ -178,7 +178,7 @@ def _count_greedy_dot_complement_alternation[
 @always_inline
 def _count_prefixed_nested_dot_literal[
     regex: Regex, literal_index: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Scan required literals and test the required prefix once per line."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime prefix_index = root.items[0]
@@ -214,7 +214,7 @@ def _count_prefixed_nested_dot_literal[
 @always_inline
 def _count_repeated_lazy_dot_delimiter_suffix[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """SIMD-scan delimiter/suffix pairs, then validate preceding delimiters."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime repeated = regex.nodes[root.items[0]][RepeatNode]
@@ -279,7 +279,7 @@ def _count_repeated_lazy_dot_delimiter_suffix[
 @always_inline
 def _count_two_delimiter_bracket_runs[
     regex: Regex, plan: _TwoDelimiterBracketRunsPlan, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Drive `A+D B+D+` matching from occurrences of the first delimiter."""
     comptime first_delimiter = regex.nodes[plan.first_delimiter_index][
         LiteralNode
@@ -322,7 +322,7 @@ def _count_two_delimiter_bracket_runs[
 @always_inline
 def _count_multiline_literal_edge_alternation[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Find one literal stream and test only its neighboring line bytes."""
     comptime literal_index = _multiline_literal_edge_index[
         regex.nodes, regex.root

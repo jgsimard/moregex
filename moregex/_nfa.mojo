@@ -42,7 +42,7 @@ def _add_closure[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
 ](
-    text: ImmStringSpan,
+    text: StringSpan,
     position: Int,
     initial: Int,
     mut states: StaticTuple[Int, state_count],
@@ -168,7 +168,7 @@ def _nfa_search_static_bits[
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
     unrolled: Bool,
-](text: ImmStringSpan, search_start: Int) -> Bool:
+](text: StringSpan, search_start: Int) -> Bool:
     """Run a small assertion-free NFA using compile-time closure tables."""
     comptime start = _static_epsilon_closure[state_count, program](start_pc)
     comptime accept_masks = _static_accept_masks[state_count, program]()
@@ -200,7 +200,7 @@ def _nfa_search_static_bits[
 def _epsilon_closure_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
-](text: ImmStringSpan, position: Int, seed: UInt64) -> _NFABitStates:
+](text: StringSpan, position: Int, seed: UInt64) -> _NFABitStates:
     var pending = seed
     var visited = UInt64(0)
     var consuming = UInt64(0)
@@ -231,7 +231,7 @@ def _nfa_search_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
-](text: ImmStringSpan, search_start: Int) -> Bool:
+](text: StringSpan, search_start: Int) -> Bool:
     var start_bit = UInt64(1) << UInt64(start_pc)
     var active = _epsilon_closure_bits[state_count, program](
         text, search_start, start_bit
@@ -260,7 +260,7 @@ def _nfa_full_static_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Run an anchored assertion-free Boolean NFA to the input end."""
     comptime start = _static_epsilon_closure[state_count, program](start_pc)
     if text.byte_length() == 0:
@@ -290,7 +290,7 @@ def _nfa_full_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Run an anchored Boolean NFA with runtime zero-width assertions."""
     var active = _epsilon_closure_bits[state_count, program](
         text, 0, UInt64(1) << UInt64(start_pc)
@@ -315,9 +315,7 @@ def _nfa_full_bits[
 
 
 @always_inline
-def _nfa_search_from[
-    regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Bool:
+def _nfa_search_from[regex: Regex](text: StringSpan, search_start: Int) -> Bool:
     """Search from an input offset with a stack-resident Thompson NFA."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
     comptime start_pc = compiled[1]
@@ -386,7 +384,7 @@ def _nfa_search_from[
 @always_inline
 def _nfa_find_from[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[_MatchSpan]:
+](text: StringSpan, search_start: Int) -> Optional[_MatchSpan]:
     """Return the ordered leftmost-first match at or after an input offset."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
     comptime start_pc = compiled[1]
@@ -401,7 +399,7 @@ def _nfa_find_from[
 @always_inline
 def _nfa_match_at[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[_MatchSpan]:
+](text: StringSpan, start: Int) -> Optional[_MatchSpan]:
     """Try the ordered NFA at one exact byte offset."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
     comptime start_pc = compiled[1]
@@ -415,7 +413,7 @@ def _nfa_match_at[
 @always_inline
 def _nfa_find_captures[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     _CaptureOffsets[regex.capture_count]
 ]:
     """Return the next match with capture offsets from the preserved AST."""
@@ -432,7 +430,7 @@ def _nfa_find_captures[
 @always_inline
 def _nfa_find_capture_participation[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
+](text: StringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
     """Return the next match and its capture participation bit mask."""
     comptime compiled = _compile_program(regex.nodes, regex.capture_root)
     comptime start_pc = compiled[1]
@@ -447,7 +445,7 @@ def _nfa_find_capture_participation[
 @always_inline
 def _nfa_match_captures_at[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[
+](text: StringSpan, start: Int) -> Optional[
     _CaptureOffsets[regex.capture_count]
 ]:
     """Try a capture match at one exact byte offset."""
@@ -461,7 +459,7 @@ def _nfa_match_captures_at[
 
 
 @always_inline
-def _nfa_full_match[regex: Regex](text: ImmStringSpan) -> Bool:
+def _nfa_full_match[regex: Regex](text: StringSpan) -> Bool:
     """Match the complete input with ordered Thompson-NFA semantics."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
     comptime start_pc = compiled[1]
@@ -488,6 +486,6 @@ def _nfa_full_match[regex: Regex](text: ImmStringSpan) -> Bool:
 
 
 @always_inline
-def _nfa_search[regex: Regex](text: ImmStringSpan) -> Bool:
+def _nfa_search[regex: Regex](text: StringSpan) -> Bool:
     """Search using a linear-time Thompson NFA."""
     return _nfa_search_from[regex](text, 0)

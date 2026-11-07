@@ -40,7 +40,7 @@ def count_spans[regex: Regex](text: String) -> Int:
 
 
 @always_inline
-def count_spans_span[regex: Regex](text: ImmStringSpan) -> Int:
+def count_spans_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of `count_spans`."""
     return _count_impl[regex, True](text)
 
@@ -52,7 +52,7 @@ def matched_bytes[regex: Regex](text: String) -> Int:
 
 
 @always_inline
-def matched_bytes_span[regex: Regex](text: ImmStringSpan) -> Int:
+def matched_bytes_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of matched_bytes."""
     return count_spans_span[regex](text)
 
@@ -64,13 +64,13 @@ def count[regex: Regex](text: String) -> Int:
 
 
 @always_inline
-def count_span[regex: Regex](text: ImmStringSpan) -> Int:
+def count_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of `count`."""
     return _count_impl[regex, False](text)
 
 
 @always_inline
-def count_captures_span[regex: Regex](text: ImmStringSpan) raises -> Int:
+def count_captures_span[regex: Regex](text: StringSpan) raises -> Int:
     """Count participating groups in all non-overlapping matches."""
     comptime if _is_anchored_lazy_capture_record[regex]():
         return (

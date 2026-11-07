@@ -34,7 +34,7 @@ def _add_ordered_closure[
     track_offsets: Bool,
     program: StaticTuple[_NFAInstruction, state_count],
 ](
-    text: ImmStringSpan,
+    text: StringSpan,
     position: Int,
     initial: Int,
     thread_start: Int,
@@ -162,7 +162,7 @@ def _nfa_ordered_execute[
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
     unanchored: Bool,
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     _NFAOrderedResult[slot_count]
 ]:
     """Run one prioritized executor with compile-time-selected payloads."""
@@ -336,7 +336,7 @@ def _nfa_ordered_match[
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
     unanchored: Bool,
-](text: ImmStringSpan, search_start: Int) -> Optional[_MatchSpan]:
+](text: StringSpan, search_start: Int) -> Optional[_MatchSpan]:
     var result = _nfa_ordered_execute[
         state_count, 1, False, False, program, start_pc, unanchored
     ](text, search_start)
@@ -349,7 +349,7 @@ def _nfa_ordered_capture_participation[
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
     unanchored: Bool,
-](text: ImmStringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
+](text: StringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
     var result = _nfa_ordered_execute[
         state_count, 1, True, False, program, start_pc, unanchored
     ](text, search_start)
@@ -366,7 +366,7 @@ def _nfa_ordered_capture_match[
     program: StaticTuple[_NFAInstruction, state_count],
     start_pc: Int,
     unanchored: Bool,
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     _CaptureOffsets[capture_count]
 ]:
     comptime assert capture_count > 0

@@ -20,7 +20,7 @@ from ._delimited import _literal_delimited_plan, _matches_literal_delimited
 
 
 @always_inline
-def _matches_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
+def _matches_span_impl[regex: Regex](text: StringSpan) -> Bool:
     comptime delimited = _literal_delimited_plan[regex]()
     comptime if delimited:
         return _matches_literal_delimited[delimited.unsafe_value()](text)
@@ -48,7 +48,7 @@ def _matches_span_impl[regex: Regex](text: ImmStringSpan) -> Bool:
 
 
 @always_inline
-def matches_span[regex: Regex](text: ImmStringSpan) -> Bool:
+def matches_span[regex: Regex](text: StringSpan) -> Bool:
     """Return whether borrowed text is a full match."""
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():

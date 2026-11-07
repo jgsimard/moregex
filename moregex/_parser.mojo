@@ -208,7 +208,7 @@ struct _Parser(Movable):
         var folded = ch | 0x20
         return ord("a") <= folded <= ord("z")
 
-    def add_literal(mut self, ch: String) -> Int:
+    def add_literal(mut self, ch: String) raises -> Int:
         if self.case_insensitive and self.is_ascii_letter(ord(ch)):
             var value = ord(ch) | 0x20
             var lows = StaticTuple[Int, MAX_CLASS_RANGES]()

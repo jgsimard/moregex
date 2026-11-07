@@ -23,7 +23,7 @@ from ._ast import (
 )
 from std.algorithm.functional import vectorize
 from std.math import iota
-from std.sys.intrinsics import masked_load
+from ._simd import _masked_load_bytes
 
 from ._common import (
     CLASS_SIMD_WIDTH,
@@ -1249,7 +1249,7 @@ def _is_unicode_dotall_plus[nodes: List[RegexNode], node_index: Int]() -> Bool:
 @always_inline
 def _count_unicode_dot[
     exclude_newline: Bool, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count Unicode dot matches or spans with native-width SIMD blocks."""
     var length = text.byte_length()
     var pointer = text.unsafe_ptr()
@@ -1262,10 +1262,9 @@ def _count_unicode_dot[
         if evl == width:
             values = pointer.unsafe_load[width=width, alignment=1](offset)
         else:
-            values = masked_load[width](
+            values = _masked_load_bytes[width](
                 pointer.unsafe_offset(offset),
                 active,
-                SIMD[.uint8, width](0),
             )
         comptime if sum_spans:
             comptime if exclude_newline:
@@ -1682,7 +1681,7 @@ def _fixed_repeat_mask[
     width: Int,
     repetition: Int,
     pattern_offset: Int,
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     comptime if repetition == repeat.minimum:
         return SIMD[.bool, width](fill=True)
     else:
@@ -1710,7 +1709,7 @@ def _fixed_sequence_mask[
     width: Int,
     item: Int,
     pattern_offset: Int,
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     comptime if item == sequence.count:
         return SIMD[.bool, width](fill=True)
     else:
@@ -1732,7 +1731,7 @@ def _fixed_sequence_mask[
 @always_inline
 def _fixed_node_mask[
     nodes: List[RegexNode], node_index: Int, width: Int, pattern_offset: Int
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     """Evaluate `width` fixed-width match starts in parallel."""
     comptime node = nodes[node_index]
     comptime match node:
@@ -1787,7 +1786,7 @@ def _fixed_sequence_offset_mask[
     width: Int,
     item: Int,
     target: Int,
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     comptime child = sequence.items[item]
     comptime child_width = _fixed_node_width[nodes, child]()
     comptime if target < child_width:
@@ -1802,7 +1801,7 @@ def _fixed_sequence_offset_mask[
 @always_inline
 def _fixed_offset_mask[
     nodes: List[RegexNode], node_index: Int, width: Int, target: Int
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     """Evaluate one byte predicate at a fixed offset for many starts."""
     comptime node = nodes[node_index]
     comptime match node:

@@ -1,6 +1,6 @@
 """Specialized regex search kernels."""
 
-from ._simd import _search_simd_width_ladder
+from ._simd import _masked_load_bytes, _search_simd_width_ladder
 from ._ast import (
     ASSERT_WORD_BOUNDARY,
     CHAR_BYTE_DOT,
@@ -21,7 +21,6 @@ from ._syntax import Regex
 from std.bit import count_trailing_zeros
 from std.math import iota
 from std.memory import pack_bits
-from std.sys.intrinsics import masked_load
 
 from ._common import (
     CLASS_SIMD_WIDTH,
@@ -85,7 +84,7 @@ def _is_bracket_infix_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
 @always_inline
 def _bracket_infix_block_matches[
     nodes: List[RegexNode], root: RegexNode, width: Int, partial: Bool
-](text: ImmStringSpan, offset: Int, count: Int) -> Bool:
+](text: StringSpan, offset: Int, count: Int) -> Bool:
     """Search one full or bounds-masked SIMD block."""
     comptime sequence = root[SequenceNode]
     comptime literal = nodes[sequence.items[1]][LiteralNode]
@@ -100,8 +99,8 @@ def _bracket_infix_block_matches[
     comptime if partial:
         var lanes = iota[DType.uint8, width]()
         active = lanes.lt(SIMD[.uint8, width](UInt8(count)))
-        values = masked_load[width](
-            pointer.unsafe_offset(offset), active, SIMD[.uint8, width](0)
+        values = _masked_load_bytes[width](
+            pointer.unsafe_offset(offset), active
         )
     else:
         values = pointer.unsafe_load[width=width, alignment=1](offset)
@@ -110,10 +109,9 @@ def _bracket_infix_block_matches[
         return False
     var left_values: SIMD[.uint8, width]
     comptime if partial:
-        left_values = masked_load[width](
+        left_values = _masked_load_bytes[width](
             pointer.unsafe_offset(offset - 1),
             candidates,
-            SIMD[.uint8, width](0),
         )
     else:
         left_values = pointer.unsafe_load[width=width, alignment=1](offset - 1)
@@ -122,10 +120,9 @@ def _bracket_infix_block_matches[
         return False
     var right_values: SIMD[.uint8, width]
     comptime if partial:
-        right_values = masked_load[width](
+        right_values = _masked_load_bytes[width](
             pointer.unsafe_offset(offset + 1),
             candidates,
-            SIMD[.uint8, width](0),
         )
     else:
         right_values = pointer.unsafe_load[width=width, alignment=1](offset + 1)
@@ -136,7 +133,7 @@ def _bracket_infix_block_matches[
 @always_inline
 def _search_bracket_infix[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Search a bracket/literal/bracket infix via SIMD delimiter scans."""
     var length = text.byte_length()
     if length < 3:
@@ -206,7 +203,7 @@ def _is_prefixed_infix_search[
                                 # The greedy prefix must stop at the literal
                                 # without requiring unsupported giveback.
                                 return not _bracket_accepts[tail](
-                                    ord(literal.value[byte=0])
+                                    Int(literal.value.as_bytes()[0])
                                 )
     return False
 
@@ -251,7 +248,7 @@ def _is_literal_dot_infix[nodes: List[RegexNode], root: RegexNode]() -> Bool:
 @always_inline
 def _search_literal_dot_infix[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Search a literal-delimited dot run using native literal scans."""
     comptime sequence = root[SequenceNode]
     comptime offset = 1 if sequence.count == 4 else 0
@@ -279,7 +276,7 @@ def _search_literal_dot_infix[
 @always_inline
 def _prefixed_infix_prefix_matches[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan, delimiter: Int) -> Bool:
+](text: StringSpan, delimiter: Int) -> Bool:
     comptime sequence = root[SequenceNode]
     comptime prefix = nodes[sequence.items[0]][SequenceNode]
     comptime first_class = nodes[prefix.items[0]][BracketClassNode]
@@ -300,7 +297,7 @@ def _prefixed_infix_prefix_matches[
 @always_inline
 def _prefixed_infix_matches_at[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan, delimiter: Int) -> Bool:
+](text: StringSpan, delimiter: Int) -> Bool:
     comptime sequence = root[SequenceNode]
     comptime literal = nodes[sequence.items[1]][LiteralNode]
     comptime right_repeat = nodes[sequence.items[2]][RepeatNode]
@@ -321,7 +318,7 @@ def _prefixed_infix_matches_at[
 @always_inline
 def _prefixed_infix_block_matches[
     nodes: List[RegexNode], root: RegexNode, width: Int
-](text: ImmStringSpan, offset: Int) -> Bool:
+](text: StringSpan, offset: Int) -> Bool:
     comptime sequence = root[SequenceNode]
     comptime literal = nodes[sequence.items[1]][LiteralNode]
     comptime right_repeat = nodes[sequence.items[2]][RepeatNode]
@@ -351,7 +348,7 @@ def _prefixed_infix_block_matches[
 @always_inline
 def _search_prefixed_infix[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """SIMD-scan a mandatory literal and validate its variable prefix."""
     comptime sequence = root[SequenceNode]
     comptime literal = nodes[sequence.items[1]][LiteralNode]
@@ -443,7 +440,7 @@ def _all_infix_options[nodes: List[RegexNode], alternation: OrNode]() -> Bool:
 @always_inline
 def _search_infix_alternation[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     comptime for i in range(alternation.count):
         comptime node = nodes[alternation.options[i]]
         comptime if _is_bracket_infix_search[nodes, node]():
@@ -600,7 +597,7 @@ def _node_starts_only_with_ascii_word[
 @always_inline
 def _search_long_word[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Find a complete ASCII word run meeting the compile-time minimum."""
     comptime sequence = root[SequenceNode]
     comptime repeat = nodes[sequence.items[1]][RepeatNode]
@@ -608,7 +605,7 @@ def _search_long_word[
 
 
 @always_inline
-def _count_long_word[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
+def _count_long_word[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     """Count complete ASCII word runs that meet the minimum length."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime repeat = regex.nodes[root.items[1]][RepeatNode]
@@ -652,7 +649,7 @@ def _count_long_word[regex: Regex, sum_spans: Bool](text: ImmStringSpan) -> Int:
 @always_inline
 def _count_word_run_literal_suffix[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Drive a complete-word suffix match from its mandatory literal."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime repeat = regex.nodes[root.items[1]][RepeatNode]
@@ -685,7 +682,7 @@ def _count_word_run_literal_suffix[
 @always_inline
 def _count_word_boundary_wrapped[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Evaluate a boundary-wrapped expression only at actual boundaries."""
     var length = text.byte_length()
     var bytes = text.as_bytes()
@@ -775,7 +772,7 @@ def _count_word_boundary_wrapped[
 
 
 @always_inline
-def _search_word_boundary_wrapped[regex: Regex](text: ImmStringSpan) -> Bool:
+def _search_word_boundary_wrapped[regex: Regex](text: StringSpan) -> Bool:
     """Search a boundary-wrapped expression only at actual word edges."""
     var length = text.byte_length()
     if _match_node[regex.nodes, regex.root](text, 0):
@@ -871,7 +868,7 @@ def _is_numeric_date_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
 @always_inline
 def _numeric_date_matches_at[
     separator_byte: Int
-](text: ImmStringSpan, first: Int) -> Bool:
+](text: StringSpan, first: Int) -> Bool:
     var length = text.byte_length()
     var bytes = text.as_bytes()
     var second = -1
@@ -902,7 +899,7 @@ def _numeric_date_matches_at[
 @always_inline
 def _numeric_date_block_matches[
     separator_byte: Int, width: Int
-](text: ImmStringSpan, offset: Int) -> Bool:
+](text: StringSpan, offset: Int) -> Bool:
     var pointer = text.unsafe_ptr()
     var previous = pointer.unsafe_load[width=width, alignment=1](offset - 1)
     var separators = pointer.unsafe_load[width=width, alignment=1](offset)
@@ -922,7 +919,7 @@ def _numeric_date_block_matches[
 @always_inline
 def _search_numeric_date[
     nodes: List[RegexNode], root: RegexNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """SIMD-scan candidate separators for numeric date fields."""
     comptime sequence = root[SequenceNode]
     comptime separator = nodes[sequence.items[1]][LiteralNode].value

@@ -45,7 +45,7 @@ def main() raises:
 non-overlapping matches. Offsets are byte positions; up to 32 numbered capture
 groups are supported, with strings copied on demand by `group(text, index)`.
 `count` counts matches; `count_spans` sums their byte lengths. The `_span`
-variants accept borrowed `ImmStringSpan` input (`count_span` counts matches).
+variants accept borrowed `StringSpan` input (`count_span` counts matches).
 
 Use `comptime regex = Regex("pattern")`; matching APIs take it as a compile-time
 parameter. Invalid or unsupported patterns abort with an `invalid regex`
@@ -74,6 +74,7 @@ pixi run test                      # runtime suite and expected compile failures
 pixi run test test/test_find.mojo   # select a module or directory
 pixi run fmt                       # format source and tests
 pixi run check                     # check formatting and run tests
+pixi run -e dev mojo run -I . benchmarks/bench_fallback.mojo
 ```
 
 Register new runtime modules in `test/run_tests.mojo` with a parameterized

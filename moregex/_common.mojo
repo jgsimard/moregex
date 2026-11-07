@@ -69,7 +69,7 @@ struct _MatchResult(Copyable, UnsafeSingleNicheable):
 @always_inline
 def _match_literal[
     value: String
-](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
+](text: StringSpan, start: Int) -> Optional[_MatchResult]:
     if start + value.byte_length() > text.byte_length():
         return None
     var text_bytes = text.as_bytes()
@@ -96,7 +96,7 @@ def _is_ascii_word(value: Int) -> Bool:
 
 
 @always_inline
-def _zero_width_matches(kind: Int, text: ImmStringSpan, position: Int) -> Bool:
+def _zero_width_matches(kind: Int, text: StringSpan, position: Int) -> Bool:
     """Evaluate a standard zero-width assertion at an input position."""
     if kind == ASSERT_INPUT_START:
         return position == 0
@@ -152,7 +152,7 @@ def _accepts_class[kind: Int](value: Int) -> Bool:
 
 
 @always_inline
-def _utf8_codepoint_width(text: ImmStringSpan, start: Int) -> Int:
+def _utf8_codepoint_width(text: StringSpan, start: Int) -> Int:
     """Return the UTF-8 code-point width at a leading byte, or zero."""
     if start >= text.byte_length():
         return 0
@@ -174,7 +174,7 @@ def _utf8_codepoint_width(text: ImmStringSpan, start: Int) -> Int:
 @always_inline
 def _match_class[
     kind: Int
-](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
+](text: StringSpan, start: Int) -> Optional[_MatchResult]:
     if start >= text.byte_length():
         return None
     comptime if kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL:
@@ -238,7 +238,7 @@ def _class_mask[
 
 
 @always_inline
-def _matches_class_run[kind: Int](text: ImmStringSpan) -> Bool:
+def _matches_class_run[kind: Int](text: StringSpan) -> Bool:
     var length = text.byte_length()
     if length == 0:
         return False

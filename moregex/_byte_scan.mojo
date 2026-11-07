@@ -1,6 +1,8 @@
 """Neutral scanning primitives shared by search and aggregation."""
 
 from ._simd import _consume_simd_width_ladder
+from std.bit import count_trailing_zeros
+from std.memory import pack_bits
 
 from ._ast import RegexNode
 from ._analysis import (
@@ -9,14 +11,39 @@ from ._analysis import (
     _one_byte_atom_accepts,
 )
 from ._common import (
+    CLASS_SIMD_WIDTH,
     CLASS_TAIL_SIMD_WIDTH,
 )
 
 
 @always_inline
+def _one_byte_run_end[
+    nodes: List[RegexNode], child: Int
+](text: StringSpan, start: Int, limit: Int) -> Int:
+    """Consume a byte-predicate run without reading beyond its repeat limit."""
+    var offset = start
+    comptime for width in [CLASS_SIMD_WIDTH, CLASS_TAIL_SIMD_WIDTH]:
+        while offset + width <= limit:
+            var accepted = _fixed_node_mask[nodes, child, width, 0](
+                text, offset
+            )
+            var rejected = pack_bits(accepted ^ SIMD[.bool, width](fill=True))
+            if rejected != 0:
+                return offset + Int(count_trailing_zeros(rejected))
+            offset += width
+    while offset < limit:
+        if not _bounded_repeat_byte_accepts[nodes, child](
+            Int(text.as_bytes()[offset])
+        ):
+            break
+        offset += 1
+    return offset
+
+
+@always_inline
 def _contains_one_byte_node[
     nodes: List[RegexNode], node_index: Int
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Return whether a byte predicate occurs."""
     var length = text.byte_length()
     var offset = 0
@@ -41,7 +68,7 @@ def _contains_one_byte_node[
 @always_inline
 def _search_one_byte_run[
     nodes: List[RegexNode], child: Int, minimum: Int
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Search for a consecutive run accepted by one AST node."""
     comptime width = CLASS_TAIL_SIMD_WIDTH
     var length = text.byte_length()

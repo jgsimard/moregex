@@ -31,7 +31,7 @@ from ._byte_scan import (
 
 
 @always_inline
-def _count_one_byte_atom[regex: Regex](text: ImmStringSpan) -> Int:
+def _count_one_byte_atom[regex: Regex](text: StringSpan) -> Int:
     """Count accepted one-byte atoms with SIMD mask population reductions."""
     var length = text.byte_length()
     var total = 0
@@ -58,7 +58,7 @@ def _count_one_byte_atom[regex: Regex](text: ImmStringSpan) -> Int:
 
 
 @always_inline
-def _capitalized_word_phrase_end(text: ImmStringSpan, start: Int) -> Int:
+def _capitalized_word_phrase_end(text: StringSpan, start: Int) -> Int:
     var length = text.byte_length()
     if start >= length:
         return -1
@@ -86,7 +86,7 @@ def _capitalized_word_phrase_end(text: ImmStringSpan, start: Int) -> Int:
 
 
 @always_inline
-def _next_ascii_uppercase(text: ImmStringSpan, start: Int) -> Int:
+def _next_ascii_uppercase(text: StringSpan, start: Int) -> Int:
     """Find the next ASCII uppercase byte with native-width SIMD."""
     var length = text.byte_length()
     var offset = start
@@ -112,7 +112,7 @@ def _next_ascii_uppercase(text: ImmStringSpan, start: Int) -> Int:
 @always_inline
 def _count_bounded_capitalized_word_sequence[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count capitalized phrase runs once instead of retrying nested repeats."""
     comptime outer = regex.nodes[regex.root][RepeatNode]
     comptime minimum = outer.minimum
@@ -179,7 +179,7 @@ def _bounded_class_run_checksum[
 @always_inline
 def _count_one_byte_class_repeat[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """SIMD-classify bytes and consume each maximal accepted run once."""
     comptime repeat = regex.nodes[regex.root][RepeatNode]
     comptime minimum = repeat.minimum
@@ -228,7 +228,7 @@ def _count_one_byte_class_repeat[
 
 
 @always_inline
-def _search_one_byte_class_repeat[regex: Regex](text: ImmStringSpan) -> Bool:
+def _search_one_byte_class_repeat[regex: Regex](text: StringSpan) -> Bool:
     """Search a root byte-predicate repeat by complete runs, not starts."""
     comptime repeat = regex.nodes[regex.root][RepeatNode]
     return _search_one_byte_run[regex.nodes, repeat.child, repeat.minimum](text)
@@ -237,7 +237,7 @@ def _search_one_byte_class_repeat[regex: Regex](text: ImmStringSpan) -> Bool:
 @always_inline
 def _count_nested_run_then_disjoint_class[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count `(class+)*other_class` as the equivalent `class*other_class`."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime outer = regex.nodes[sequence.items[0]][RepeatNode]

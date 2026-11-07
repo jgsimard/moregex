@@ -48,7 +48,7 @@ def _literal_alternation_first_accepts[
 @always_inline
 def _literal_alternation_matches_at[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan, start: Int) -> Bool:
+](text: StringSpan, start: Int) -> Bool:
     comptime for i in range(alternation.count):
         comptime literal = nodes[alternation.options[i]][LiteralNode]
         comptime first = Int(literal.value.as_bytes()[0])
@@ -80,7 +80,7 @@ def _literal_alternation_block_fits[
 @always_inline
 def _literal_alternation_block_matches[
     nodes: List[RegexNode], alternation: OrNode, width: Int
-](text: ImmStringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> Bool:
+](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> Bool:
     # _literal_alternation_block_fits proves every shifted vector load below is
     # in bounds for every compile-time branch.
     var pointer = text.unsafe_ptr()
@@ -103,7 +103,7 @@ def _literal_alternation_block_matches[
 @always_inline
 def _literal_alternation_uniform_block_matches[
     nodes: List[RegexNode], alternation: OrNode, width: Int
-](text: ImmStringSpan, offset: Int, value: UInt8) -> Bool:
+](text: StringSpan, offset: Int, value: UInt8) -> Bool:
     """Check only alternatives that can start in a uniform-byte block."""
     var pointer = text.unsafe_ptr()
     comptime for i in range(alternation.count):
@@ -125,7 +125,7 @@ def _literal_alternation_uniform_block_matches[
 @always_inline
 def _literal_alternation_full_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
-](text: ImmStringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
+](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
     .bool, width
 ]:
     """Return starts where any literal alternative matches completely."""
@@ -358,7 +358,7 @@ def _alternation_teddy3_mask[
 @always_inline
 def _literal_alternation_candidate_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
-](text: ImmStringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
+](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
     .bool, width
 ]:
     comptime first_literal = nodes[alternation.options[0]][LiteralNode]
@@ -475,7 +475,7 @@ def _literal_alternation_candidate_mask[
 @always_inline
 def _literal_alternation_match_length_at[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan, start: Int) -> Int:
+](text: StringSpan, start: Int) -> Int:
     comptime for i in range(alternation.count):
         comptime literal = nodes[alternation.options[i]][LiteralNode]
         comptime literal_length = literal.value.byte_length()
@@ -493,7 +493,7 @@ def _literal_alternation_match_length_at[
 @always_inline
 def _count_literal_alternation_find[
     nodes: List[RegexNode], alternation: OrNode, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Merge full-literal search streams when all first bytes collide."""
     var candidates = StaticTuple[Int, MAX_BRANCHES]()
     comptime for i in range(alternation.count):
@@ -529,7 +529,7 @@ def _count_literal_alternation_find[
 @always_inline
 def _count_literal_alternation[
     nodes: List[RegexNode], alternation: OrNode, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count literal alternatives using SIMD prefix candidate masks."""
     comptime first_literal = nodes[alternation.options[0]][LiteralNode]
     comptime first_byte = Int(first_literal.value.as_bytes()[0])
@@ -591,7 +591,7 @@ def _count_literal_alternation[
 @always_inline
 def _search_literal_alternation[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     # Search once for the union of all first bytes. Full literal comparisons
     # are only evaluated in vector blocks that contain a candidate.
     var length = text.byte_length()

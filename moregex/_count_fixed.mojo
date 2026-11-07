@@ -41,7 +41,7 @@ from ._ast_matcher import (
 @always_inline
 def _count_end_anchored_fixed[
     regex: Regex, match_width: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Evaluate a fixed-width end-anchored expression at legal starts."""
     var length = text.byte_length()
     var terminal_start = length - match_width
@@ -66,7 +66,7 @@ def _count_end_anchored_fixed[
 @always_inline
 def _match_simple_prefix_to[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
-](text: ImmStringSpan, end: Int, minimum_start: Int) -> Optional[_MatchSpan]:
+](text: StringSpan, end: Int, minimum_start: Int) -> Optional[_MatchSpan]:
     """Match a one-byte sequence prefix backwards with repeat giveback."""
     comptime if item < 0:
         return _MatchSpan(end, end)
@@ -190,9 +190,7 @@ def _simple_anchor_is_disjoint[
 @always_inline
 def _match_simple_infix_at[
     regex: Regex, literal_item: Int
-](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> Optional[
-    _MatchSpan
-]:
+](text: StringSpan, candidate: Int, minimum_start: Int) -> Optional[_MatchSpan]:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     var prefix = _match_simple_prefix_to[
         regex.nodes, sequence, literal_item - 1
@@ -224,7 +222,7 @@ def _match_simple_infix_at[
 @always_inline
 def _count_simple_infix[
     regex: Regex, literal_item: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime literal = regex.nodes[sequence.items[literal_item]][LiteralNode]
     var total = 0
@@ -247,7 +245,7 @@ def _count_simple_infix[
 @no_inline
 def _count_greedy_run_literal_suffix[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count a greedy unbounded byte run followed by an accepted literal."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime repeat = regex.nodes[sequence.items[0]][RepeatNode]
@@ -285,7 +283,7 @@ def _count_greedy_run_literal_suffix[
 @always_inline
 def _search_simple_infix[
     regex: Regex, literal_item: Int
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Search a simple byte sequence from occurrences of its best literal."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime literal = regex.nodes[sequence.items[literal_item]][LiteralNode]
@@ -300,9 +298,7 @@ def _search_simple_infix[
 @always_inline
 def _match_simple_class_anchor_at[
     regex: Regex, class_item: Int
-](text: ImmStringSpan, candidate: Int, minimum_start: Int) -> Optional[
-    _MatchSpan
-]:
+](text: StringSpan, candidate: Int, minimum_start: Int) -> Optional[_MatchSpan]:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     var prefix = _match_simple_prefix_to[regex.nodes, sequence, class_item - 1](
         text, candidate, minimum_start
@@ -319,7 +315,7 @@ def _match_simple_class_anchor_at[
 @always_inline
 def _search_simple_class_anchor[
     regex: Regex, class_item: Int
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime class_index = sequence.items[class_item]
 
@@ -356,7 +352,7 @@ def _search_simple_class_anchor[
 @always_inline
 def _count_simple_class_anchor[
     regex: Regex, class_item: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime class_index = sequence.items[class_item]
     var total = 0
@@ -406,7 +402,7 @@ def _count_simple_class_anchor[
 @always_inline
 def _count_reverse_suffix_class[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Use a required final class to evaluate a variable-width sequence."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime prefix_index = sequence.items[0]
@@ -457,7 +453,7 @@ def _use_full_fixed_alternation_mask[regex: Regex, match_width: Int]() -> Bool:
 @always_inline
 def _count_fixed_width_prefiltered[
     regex: Regex, match_width: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Filter fixed-width starts by their three narrowest byte predicates."""
     comptime plan = _fixed_prefilter_plan[
         regex.nodes, regex.root, match_width
@@ -523,7 +519,7 @@ def _count_fixed_width_prefiltered[
 @always_inline
 def _search_fixed_width_prefiltered[
     regex: Regex, match_width: Int
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Search fixed-width starts through their narrowest byte predicates."""
     comptime plan = _fixed_prefilter_plan[
         regex.nodes, regex.root, match_width

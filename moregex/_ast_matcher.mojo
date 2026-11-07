@@ -11,12 +11,14 @@ from ._common import (
 )
 
 from ._byte_predicates import _build_bracket_masks
+from ._analysis import _is_one_byte_class_node
+from ._byte_scan import _one_byte_run_end
 
 
 @always_inline
 def _match_sequence_from[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
-](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
+](text: StringSpan, start: Int) -> Optional[_MatchResult]:
     comptime if item == sequence.count:
         return _MatchResult(0)
     else:
@@ -79,17 +81,29 @@ def _match_sequence_from[
 
                     var count = 0
                     var consumed = 0
-                    while True:
+                    comptime if _is_one_byte_class_node[nodes, repeat.child]():
+                        var limit = text.byte_length()
                         comptime if repeat.maximum >= 0:
-                            if count >= repeat.maximum:
-                                break
-                        var result = _match_node[nodes, repeat.child](
-                            text, start + consumed
+                            limit = start + min(repeat.maximum, limit - start)
+                        consumed = (
+                            _one_byte_run_end[nodes, repeat.child](
+                                text, start, limit
+                            )
+                            - start
                         )
-                        if not result:
-                            break
-                        count += 1
-                        consumed += child_width
+                        count = consumed
+                    else:
+                        while True:
+                            comptime if repeat.maximum >= 0:
+                                if count >= repeat.maximum:
+                                    break
+                            var result = _match_node[nodes, repeat.child](
+                                text, start + consumed
+                            )
+                            if not result:
+                                break
+                            count += 1
+                            consumed += child_width
 
                     while count >= repeat.minimum:
                         var suffix = _match_sequence_from[
@@ -121,7 +135,7 @@ def _match_sequence_from[
 @always_inline
 def _match_node[
     nodes: List[RegexNode], node_index: Int
-](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
+](text: StringSpan, start: Int) -> Optional[_MatchResult]:
     comptime node = nodes[node_index]
     comptime match node:
         case .Empty:
@@ -154,6 +168,19 @@ def _match_node[
                     return result^
             return None
         case .Repeat(repeat):
+            comptime if _is_one_byte_class_node[nodes, repeat.child]():
+                var limit = text.byte_length()
+                comptime if not repeat.greedy:
+                    limit = start + min(repeat.minimum, limit - start)
+                elif repeat.maximum >= 0:
+                    limit = start + min(repeat.maximum, limit - start)
+                var consumed = (
+                    _one_byte_run_end[nodes, repeat.child](text, start, limit)
+                    - start
+                )
+                if consumed >= repeat.minimum:
+                    return _MatchResult(consumed)
+                return None
             var count = 0
             var consumed = 0
             while True:

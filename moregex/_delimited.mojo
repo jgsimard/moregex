@@ -89,7 +89,7 @@ def _analyze_literal_delimited(
 @always_inline
 def _find_literal_delimited[
     plan: _LiteralDelimitedPlan
-](text: ImmStringSpan, start: Int = 0) -> Optional[_MatchSpan]:
+](text: StringSpan, start: Int = 0) -> Optional[_MatchSpan]:
     """Find the first opener and its earliest valid closer without an NFA."""
     var candidate = text.find(plan.prefix, start)
     var suffix_start = -1
@@ -119,7 +119,7 @@ def _find_literal_delimited[
 @always_inline
 def _count_literal_delimited[
     plan: _LiteralDelimitedPlan, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     var total = 0
     var start = 0
     while start <= text.byte_length():
@@ -138,7 +138,7 @@ def _count_literal_delimited[
 @always_inline
 def _matches_literal_delimited[
     plan: _LiteralDelimitedPlan
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     var suffix_start = text.byte_length() - plan.suffix.byte_length()
     if suffix_start < plan.prefix.byte_length():
         return False

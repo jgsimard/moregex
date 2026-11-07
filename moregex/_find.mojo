@@ -99,9 +99,9 @@ struct RegexMatch[capture_count: Int](ImplicitlyCopyable):
 
     def group_span[
         origin: ImmOrigin
-    ](
-        self, text: ImmStringSpan[origin], group: Int = 0
-    ) raises -> ImmStringSpan[origin]:
+    ](self, text: StringSpan[origin], group: Int = 0) raises -> StringSpan[
+        origin
+    ]:
         """Borrow a captured substring from the original input."""
         self._check_group(group)
         var start = self._offsets.starts[group]
@@ -365,7 +365,7 @@ def _is_anchored_lazy_capture_record[regex: Regex]() -> Bool:
 @always_inline
 def _match_capture_child_or_node[
     nodes: List[RegexNode], node_index: Int
-](text: ImmStringSpan, start: Int) -> Optional[_MatchResult]:
+](text: StringSpan, start: Int) -> Optional[_MatchResult]:
     comptime node = nodes[node_index]
     comptime if node.isa[CaptureNode]():
         return _match_node[nodes, node[CaptureNode].child](text, start)
@@ -375,7 +375,7 @@ def _match_capture_child_or_node[
 @always_inline
 def _matches_anchored_lazy_capture_record[
     regex: Regex
-](text: ImmStringSpan) -> Bool:
+](text: StringSpan) -> Bool:
     """Match an anchored lazy-body capture record from its terminal suffix."""
     comptime root = regex.nodes[regex.capture_root][SequenceNode]
     var position = 0
@@ -429,7 +429,7 @@ def _matches_anchored_lazy_capture_record[
 @always_inline
 def _find_delimited_capture_record[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     RegexMatch[regex.capture_count]
 ]:
     """Match a deterministic anchored capture record in one linear scan."""
@@ -576,7 +576,7 @@ def _is_fixed_capture_sequence[regex: Regex]() -> Bool:
 @always_inline
 def _fixed_capture_sequence_match_at[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
+](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
     comptime sequence = regex.nodes[regex.capture_root][SequenceNode]
     var starts = StaticTuple[Int, regex.capture_count + 1]()
     var ends = StaticTuple[Int, regex.capture_count + 1]()
@@ -620,7 +620,7 @@ def _fixed_capture_sequence_match_at[
 @always_inline
 def _find_fixed_capture_sequence[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     RegexMatch[regex.capture_count]
 ]:
     var start = search_start
@@ -746,7 +746,7 @@ def _is_delimited_capture_record_with_optional_tail[regex: Regex]() -> Bool:
 @always_inline
 def _find_delimited_capture_record_with_optional_tail[
     regex: Regex
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     RegexMatch[regex.capture_count]
 ]:
     if search_start > 0:
@@ -842,7 +842,7 @@ def _captured_fixed_width_alternation_index[regex: Regex]() -> Int:
 @always_inline
 def _find_captured_fixed_width_alternation[
     regex: Regex, alternation_index: Int
-](text: ImmStringSpan, search_start: Int) -> Optional[
+](text: StringSpan, search_start: Int) -> Optional[
     RegexMatch[regex.capture_count]
 ]:
     comptime alternation = regex.nodes[alternation_index][OrNode]
@@ -971,7 +971,7 @@ def _captured_literal_run_group_map[regex: Regex]() -> StaticTuple[Int, 256]:
 @always_inline
 def _find_captured_literal_run_alternation[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
+](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
     """Execute a normalized byte-class run while retaining capture identity."""
     comptime groups = _captured_literal_run_group_map[regex]()
     comptime root = regex.nodes[regex.capture_root][OrNode]
@@ -1019,7 +1019,7 @@ def _find_captured_literal_run_alternation[
 @always_inline
 def _literal_capture_run_match_at[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
+](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
     """Try every branch of a normalized capture plan at one byte offset."""
     comptime root = regex.nodes[regex.capture_root][OrNode]
     comptime for option in range(root.count):
@@ -1076,7 +1076,7 @@ def _literal_capture_prefix_max_width[regex: Regex]() -> Int:
 @always_inline
 def _find_literal_capture_run_alternation[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
+](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
     """Execute a normalized literal-prefix/captured-run alternation plan."""
     comptime root = regex.nodes[regex.capture_root][OrNode]
     comptime maximum = _literal_capture_prefix_max_width[regex]()
@@ -1194,7 +1194,7 @@ def _has_leading_literal_prefilter[regex: Regex]() -> Bool:
 
 
 @always_inline
-def _prefilter_start[regex: Regex](text: ImmStringSpan, start: Int) -> Int:
+def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
     """Skip directly to a required literal at the match's leading edge."""
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
@@ -1225,7 +1225,7 @@ def _prefilter_start[regex: Regex](text: ImmStringSpan, start: Int) -> Int:
 @always_inline
 def find_span[
     regex: Regex
-](text: ImmStringSpan, start: Int = 0) -> Optional[
+](text: StringSpan, start: Int = 0) -> Optional[
     RegexMatch[regex.capture_count]
 ]:
     """Find the next leftmost-first match at or after a byte offset."""
@@ -1310,7 +1310,7 @@ def find[
 
 def findall_span[
     regex: Regex
-](text: ImmStringSpan) -> List[RegexMatch[regex.capture_count]]:
+](text: StringSpan) -> List[RegexMatch[regex.capture_count]]:
     """Collect leftmost, non-overlapping matches over a borrowed input."""
     var matches = List[RegexMatch[regex.capture_count]]()
     var search_start = 0
@@ -1337,7 +1337,7 @@ def findall[
 
 def finditer_span[
     regex: Regex
-](text: ImmStringSpan) -> List[RegexMatch[regex.capture_count]]:
+](text: StringSpan) -> List[RegexMatch[regex.capture_count]]:
     """Compatibility alias for findall_span."""
     return findall_span[regex](text)
 

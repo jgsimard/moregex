@@ -56,7 +56,7 @@ from ._literals import (
 @always_inline
 def _bounded_prefix_length_before[
     regex: Regex
-](text: ImmStringSpan, suffix_start: Int, minimum_start: Int) -> Int:
+](text: StringSpan, suffix_start: Int, minimum_start: Int) -> Int:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime repeat = regex.nodes[sequence.items[0]][RepeatNode]
     var available = min(repeat.maximum, suffix_start - minimum_start)
@@ -77,7 +77,7 @@ def _bounded_prefix_length_before[
 @always_inline
 def _count_bounded_prefix_literal_alternation[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """SIMD-scan mandatory alternatives, then test the bounded prefix."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime alternation = regex.nodes[sequence.items[1]][OrNode]
@@ -174,7 +174,7 @@ def _class_literal_alternation_common_prefix[
 @always_inline
 def _class_literal_alternation_mask[
     regex: Regex, width: Int
-](text: ImmStringSpan, block_start: Int) -> SIMD[.bool, width]:
+](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime alternation = regex.nodes[root.items[0]][OrNode]
     comptime suffix = root.items[1]
@@ -230,7 +230,7 @@ def _class_literal_alternation_mask[
 @always_inline
 def _count_class_literal_alternation_with_suffix[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Evaluate class/literal branches together in one SIMD corpus pass."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime alternation = regex.nodes[root.items[0]][OrNode]
@@ -271,7 +271,7 @@ def _count_class_literal_alternation_with_suffix[
 @always_inline
 def _count_symmetric_bounded_delimited[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Pair consecutive SIMD-found delimiters for `D [^D]{m,n} C D`."""
     comptime root = regex.nodes[regex.root][SequenceNode]
     comptime delimiter = regex.nodes[root.items[0]][BracketClassNode]
@@ -328,7 +328,7 @@ def _count_symmetric_bounded_delimited[
 @always_inline
 def _count_bracket_prefixed_sequence[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Use the leading bracket class as a SIMD candidate prefilter."""
     comptime if _is_symmetric_bounded_delimited_sequence[
         regex.nodes, regex.root
@@ -374,7 +374,7 @@ def _count_bracket_prefixed_sequence[
 @always_inline
 def _bounded_line_gap_alternation_match_length[
     regex: Regex
-](text: ImmStringSpan, start: Int) -> Int:
+](text: StringSpan, start: Int) -> Int:
     """Match a normalized bounded content-line gap from one literal prefix."""
     comptime alternation = regex.nodes[regex.root][OrNode]
     comptime for option in range(alternation.count):
@@ -423,7 +423,7 @@ def _bounded_line_gap_alternation_match_length[
 @always_inline
 def _prefixed_alternation_match_length[
     regex: Regex, use_nfa: Bool = False
-](text: ImmStringSpan, start: Int) -> Int:
+](text: StringSpan, start: Int) -> Int:
     comptime if _is_bounded_line_gap_literal_alternation[
         regex.nodes, regex.root
     ]():
@@ -439,7 +439,7 @@ def _prefixed_alternation_match_length[
 @always_inline
 def _prefixed_alternation_literal_matches_at[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan, start: Int) -> Bool:
+](text: StringSpan, start: Int) -> Bool:
     """Confirm a complete mandatory branch prefix at a SIMD candidate."""
     comptime for option in range(alternation.count):
         comptime prefix_index = _sequence_prefix_literal_index[
@@ -457,7 +457,7 @@ def _count_prefixed_alternation_simd[
     alternation: OrNode,
     sum_spans: Bool,
     use_nfa: Bool = False,
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Scan correlated literal-prefix bytes once for every branch."""
     var length = text.byte_length()
     var total = 0
@@ -531,7 +531,7 @@ def _count_prefixed_alternation_simd[
 @always_inline
 def _count_prefixed_alternation[
     regex: Regex, alternation: OrNode, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Merge persistent mandatory-prefix cursors in leftmost order."""
     comptime if _all_prefixed_sequence_options[regex.nodes, alternation, 3]():
         return _count_prefixed_alternation_simd[regex, alternation, sum_spans](

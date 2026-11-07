@@ -46,7 +46,7 @@ def _is_ascii_fold_literal_sequence[
 @always_inline
 def _casefold_alternation_prefix_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
-](text: ImmStringSpan, offset: Int) -> SIMD[.bool, width]:
+](text: StringSpan, offset: Int) -> SIMD[.bool, width]:
     var pointer = text.unsafe_ptr()
     var first_values = pointer.unsafe_load[width=width, alignment=1](offset)
     var second_values = pointer.unsafe_load[width=width, alignment=1](
@@ -79,7 +79,7 @@ def _casefold_alternation_prefix_mask[
 @always_inline
 def _casefold_alternation_match_length_at[
     nodes: List[RegexNode], alternation: OrNode
-](text: ImmStringSpan, start: Int) -> Int:
+](text: StringSpan, start: Int) -> Int:
     """Verify a folded-literal candidate without generic alternation dispatch.
     """
     comptime for i in range(alternation.count):
@@ -128,7 +128,7 @@ def _count_casefold_prefixed_alternation[
     alternation: OrNode,
     sum_spans: Bool,
     word_boundaries: Bool = False,
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """SIMD-prefilter alternatives by their first three folded letters."""
     var length = text.byte_length()
     var total = 0

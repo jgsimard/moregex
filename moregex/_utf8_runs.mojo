@@ -517,7 +517,7 @@ def _utf8_infix_max_literal_length[regex: Regex]() -> Int:
 @always_inline
 def _match_utf8_class_literal_infix_option_at[
     regex: Regex, option_index: Int
-](text: ImmStringSpan, candidate: Int, search_start: Int) -> Optional[
+](text: StringSpan, candidate: Int, search_start: Int) -> Optional[
     _Utf8InfixMatch
 ]:
     comptime sequence = regex.nodes[option_index][SequenceNode]
@@ -733,7 +733,7 @@ def _count_exact_utf8_class_sequence[
 @always_inline
 def _count_utf8_class_separated_literal_infix[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count UTF-8 word-like runs around a separated mandatory literal."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime left = regex.nodes[sequence.items[0]][RepeatNode]
@@ -801,7 +801,7 @@ def _count_utf8_class_separated_literal_infix[
 @always_inline
 def _count_utf8_class_literal_infix_alternation[
     regex: Regex, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     comptime alternation = regex.nodes[regex.root][OrNode]
     comptime maximum_literal_length = _utf8_infix_max_literal_length[regex]()
     var length = text.byte_length()

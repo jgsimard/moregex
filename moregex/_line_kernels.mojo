@@ -28,7 +28,7 @@ from ._ast_matcher import (
 @always_inline
 def _count_anchored_prefix_delimited_lines[
     regex: Regex
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count grep lines matching an AST-normalized prefix/delimiter shape."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime item_offset = _anchored_prefix_delimited_line_offset[
@@ -66,7 +66,7 @@ def _count_anchored_prefix_delimited_lines[
 @always_inline
 def _count_anchored_lazy_literal_lines[
     regex: Regex, plan: _AnchoredLazyLiteralPlan
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count anchored lines using the literal after a lazy dot as the anchor."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime prefix_literal = regex.nodes[plan.prefix_literal_index][
@@ -113,7 +113,7 @@ def _count_anchored_lazy_literal_lines[
 @always_inline
 def _count_line_prefix_run_literal[
     regex: Regex, plan: _LinePrefixRunLiteralPlan
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count lines matching a deterministic anchored run/literal prefix."""
     comptime literal = regex.nodes[plan.literal_index][LiteralNode]
     var total = 0

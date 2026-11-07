@@ -37,7 +37,7 @@ struct _NFAInstruction(TrivialRegisterPassable):
 
 @always_inline
 def _runtime_assertion_matches(
-    kind: Int, text: ImmStringSpan, position: Int
+    kind: Int, text: StringSpan, position: Int
 ) -> Bool:
     if kind == _NFA_STRICT_END:
         return position == text.byte_length()

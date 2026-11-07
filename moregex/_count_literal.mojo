@@ -12,7 +12,7 @@ from ._common import (
 
 
 @always_inline
-def _search_static_literal[pattern: StaticString](text: ImmStringSpan) -> Bool:
+def _search_static_literal[pattern: StaticString](text: StringSpan) -> Bool:
     """SIMD-scan sparse first-byte candidates for a static literal."""
     comptime literal_length = pattern.byte_length()
     if text.byte_length() < literal_length:
@@ -47,7 +47,7 @@ def _search_static_literal[pattern: StaticString](text: ImmStringSpan) -> Bool:
 @always_inline
 def _count_static_literal[
     pattern: StaticString, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count a literal while borrowing its original static pattern storage."""
     comptime literal_length = pattern.byte_length()
     var start = text.find(pattern)
@@ -78,7 +78,7 @@ def _literal_has_unique_first_byte[value: String]() -> Bool:
 @always_inline
 def _matches_short_literal_simd[
     pattern: StaticString
-](text: ImmStringSpan, start: Int) -> Bool:
+](text: StringSpan, start: Int) -> Bool:
     """Verify a 16--32-byte in-bounds literal with one or two SIMD loads."""
     comptime literal_length = pattern.byte_length()
     comptime width = 16
@@ -103,7 +103,7 @@ def _matches_short_literal_simd[
 @always_inline
 def _count_short_literal_simd_candidates[
     pattern: StaticString, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count a small set of unbordered long-literal candidates via SIMD."""
     comptime literal_length = pattern.byte_length()
     comptime first = pattern.as_bytes()[0]
@@ -147,7 +147,7 @@ def _literal_unique_high_byte_offset[value: String]() -> Int:
 @always_inline
 def _count_unique_anchor_literal[
     value: String, anchor_offset: Int, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count a literal from a unique non-ASCII SIMD anchor byte."""
     comptime literal_length = value.byte_length()
     if text.byte_length() < literal_length:
@@ -218,7 +218,7 @@ def _count_unique_anchor_literal[
 @always_inline
 def _count_reverse_unbordered_literal[
     value: String, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """Count non-overlapping literal hits from SIMD first-byte candidates."""
     comptime literal_length = value.byte_length()
     if text.byte_length() < literal_length:
@@ -253,7 +253,7 @@ def _count_reverse_unbordered_literal[
 @always_inline
 def _count_edge_prefiltered_literal[
     value: String, sum_spans: Bool
-](text: ImmStringSpan) -> Int:
+](text: StringSpan) -> Int:
     """SIMD-filter literal starts by their first and last bytes."""
     comptime literal_length = value.byte_length()
     if text.byte_length() < literal_length:
