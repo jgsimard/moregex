@@ -227,7 +227,7 @@ def _count_simple_infix[
     comptime literal = regex.nodes[sequence.items[literal_item]][LiteralNode]
     var total = 0
     var minimum_start = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         var result = _match_simple_infix_at[regex, literal_item](
             text, candidate, minimum_start
@@ -236,9 +236,9 @@ def _count_simple_infix[
             var span = result.unsafe_value()
             total += _match_checksum[sum_spans](span.consumed())
             minimum_start = max(span.end, span.start + 1)
-            candidate = text.find(literal.value, minimum_start)
+            candidate = text.find(literal.value, minimum_start).or_else(-1)
         else:
-            candidate = text.find(literal.value, candidate + 1)
+            candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return total
 
 
@@ -254,7 +254,7 @@ def _count_greedy_run_literal_suffix[
     var total = 0
     var length = text.byte_length()
     var bytes = text.as_bytes()
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         var run_start = candidate
         while run_start > 0 and _one_byte_atom_accepts[
@@ -272,7 +272,7 @@ def _count_greedy_run_literal_suffix[
         while candidate >= 0 and candidate + literal_length <= run_end:
             if candidate - run_start >= repeat.minimum:
                 last = candidate
-            candidate = text.find(literal.value, candidate + 1)
+            candidate = text.find(literal.value, candidate + 1).or_else(-1)
         if last >= 0:
             total += _match_checksum[sum_spans](
                 last + literal_length - run_start
@@ -287,11 +287,11 @@ def _search_simple_infix[
     """Search a simple byte sequence from occurrences of its best literal."""
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime literal = regex.nodes[sequence.items[literal_item]][LiteralNode]
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         if _match_simple_infix_at[regex, literal_item](text, candidate, 0):
             return True
-        candidate = text.find(literal.value, candidate + 1)
+        candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return False
 
 

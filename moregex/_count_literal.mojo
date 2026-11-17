@@ -18,7 +18,7 @@ def _search_static_literal[pattern: StaticString](text: StringSpan) -> Bool:
     if text.byte_length() < literal_length:
         return False
     if text.byte_length() < 2 * CLASS_SIMD_WIDTH:
-        return text.find(pattern) >= 0
+        return text.find(pattern).or_else(-1) >= 0
     comptime first = pattern.as_bytes()[0]
     var candidate_count = text.byte_length() - literal_length + 1
     var offset = 0
@@ -39,9 +39,9 @@ def _search_static_literal[pattern: StaticString](text: StringSpan) -> Bool:
             checked += 1
         if pending != 0:
             # Dense candidates favor the standard substring implementation.
-            return text.find(pattern, offset) >= 0
+            return text.find(pattern, offset).or_else(-1) >= 0
         offset += CLASS_SIMD_WIDTH
-    return text.find(pattern, offset) >= 0
+    return text.find(pattern, offset).or_else(-1) >= 0
 
 
 @always_inline
@@ -50,13 +50,13 @@ def _count_static_literal[
 ](text: StringSpan) -> Int:
     """Count a literal while borrowing its original static pattern storage."""
     comptime literal_length = pattern.byte_length()
-    var start = text.find(pattern)
+    var start = text.find(pattern).or_else(-1)
     if start < 0:
         return 0
     var total = _match_checksum[sum_spans](literal_length)
     while start + 2 * literal_length <= text.byte_length():
         var next_start = start + literal_length
-        start = text.find(pattern, next_start)
+        start = text.find(pattern, next_start).or_else(-1)
         if start < 0:
             break
         total += _match_checksum[sum_spans](literal_length)

@@ -62,7 +62,7 @@ def _count_leading_class_literal[
             ):
                 return 0
     else:
-        candidate = text.find(literal.value)
+        candidate = text.find(literal.value).or_else(-1)
 
     while candidate >= 0:
         var start = candidate
@@ -84,7 +84,7 @@ def _count_leading_class_literal[
         comptime if end_anchored:
             break
         else:
-            candidate = text.find(literal.value, search_start)
+            candidate = text.find(literal.value, search_start).or_else(-1)
     return total
 
 
@@ -96,20 +96,22 @@ def _count_adjacent_dot_stars_around_literal[
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime literal = regex.nodes[sequence.items[2]][LiteralNode]
     var total = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         var line_start = candidate
         while line_start > 0 and Int(text.as_bytes()[line_start - 1]) != ord(
             "\n"
         ):
             line_start -= 1
-        var line_end = text.find("\n", candidate + literal.value.byte_length())
+        var line_end = text.find(
+            "\n", candidate + literal.value.byte_length()
+        ).or_else(-1)
         if line_end < 0:
             line_end = text.byte_length()
         total += _match_checksum[sum_spans](line_end - line_start)
         if line_end == text.byte_length():
             break
-        candidate = text.find(literal.value, line_end + 1)
+        candidate = text.find(literal.value, line_end + 1).or_else(-1)
     return total
 
 
@@ -184,7 +186,7 @@ def _count_prefixed_nested_dot_literal[
     comptime prefix_index = root.items[0]
     comptime literal = regex.nodes[literal_index][LiteralNode]
     var total = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     var bytes = text.as_bytes()
     while candidate >= 0:
         var line_start = candidate
@@ -199,15 +201,15 @@ def _count_prefixed_nested_dot_literal[
         if matched_start >= 0:
             var line_end = text.find(
                 "\n", candidate + literal.value.byte_length()
-            )
+            ).or_else(-1)
             if line_end < 0:
                 line_end = text.byte_length()
             total += _match_checksum[sum_spans](line_end - matched_start)
             if line_end == text.byte_length():
                 break
-            candidate = text.find(literal.value, line_end + 1)
+            candidate = text.find(literal.value, line_end + 1).or_else(-1)
         else:
-            candidate = text.find(literal.value, candidate + 1)
+            candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return total
 
 
@@ -287,7 +289,7 @@ def _count_two_delimiter_bracket_runs[
     var bytes = text.as_bytes()
     var total = 0
     var next_start = 0
-    var candidate = text.find(first_delimiter.value)
+    var candidate = text.find(first_delimiter.value).or_else(-1)
     while candidate >= 0:
         if candidate >= next_start:
             var start = candidate
@@ -313,9 +315,11 @@ def _count_two_delimiter_bracket_runs[
                 ):
                     total += _match_checksum[sum_spans](end - start)
                     next_start = end
-                    candidate = text.find(first_delimiter.value, next_start)
+                    candidate = text.find(
+                        first_delimiter.value, next_start
+                    ).or_else(-1)
                     continue
-        candidate = text.find(first_delimiter.value, candidate + 1)
+        candidate = text.find(first_delimiter.value, candidate + 1).or_else(-1)
     return total
 
 
@@ -331,7 +335,7 @@ def _count_multiline_literal_edge_alternation[
     comptime width = literal.value.byte_length()
     var total = 0
     var next_start = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     var bytes = text.as_bytes()
     while candidate >= 0:
         var at_start = candidate == 0 or Int(bytes[candidate - 1]) == ord("\n")
@@ -340,7 +344,7 @@ def _count_multiline_literal_edge_alternation[
         if candidate >= next_start and (at_start or at_end):
             total += _match_checksum[sum_spans](width)
             next_start = end
-            candidate = text.find(literal.value, next_start)
+            candidate = text.find(literal.value, next_start).or_else(-1)
         else:
-            candidate = text.find(literal.value, candidate + 1)
+            candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return total

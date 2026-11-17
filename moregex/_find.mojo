@@ -394,7 +394,7 @@ def _matches_anchored_lazy_capture_record[
     comptime body_kind = regex.nodes[body_repeat.child][CharClassNode].kind
     var candidate = text.find(
         anchor.value, position + prefix.value.byte_length()
-    )
+    ).or_else(-1)
     while candidate >= 0:
         var suffix_start = candidate - prefix.value.byte_length()
         if suffix_start >= position and _match_literal[prefix.value](
@@ -422,7 +422,7 @@ def _matches_anchored_lazy_capture_record[
                         == text.byte_length()
                     ):
                         return True
-        candidate = text.find(anchor.value, candidate + 1)
+        candidate = text.find(anchor.value, candidate + 1).or_else(-1)
     return False
 
 
@@ -1198,7 +1198,7 @@ def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
     """Skip directly to a required literal at the match's leading edge."""
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
-        return text.find(root[LiteralNode].value, start)
+        return text.find(root[LiteralNode].value, start).or_else(-1)
     comptime if root.isa[SequenceNode]():
         comptime sequence = root[SequenceNode]
         comptime for i in range(sequence.count):
@@ -1206,7 +1206,7 @@ def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
             comptime if item.isa[EmptyNode]() or item.isa[ZeroWidthNode]():
                 continue
             comptime if item.isa[LiteralNode]():
-                return text.find(item[LiteralNode].value, start)
+                return text.find(item[LiteralNode].value, start).or_else(-1)
             return start
     comptime if root.isa[OrNode]():
         comptime alternation = root[OrNode]
@@ -1218,7 +1218,9 @@ def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
                 regex.nodes, alternation.options[0]
             ]()
             comptime literal = regex.nodes[literal_index][LiteralNode]
-            return text.find(literal.value[byte=0:prefix_length], start)
+            return text.find(
+                literal.value[byte=0:prefix_length], start
+            ).or_else(-1)
     return start
 
 

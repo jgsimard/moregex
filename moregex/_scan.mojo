@@ -32,7 +32,7 @@ def _scan_generic[
             not plan.selective_start
             or literal[LiteralNode].value.byte_length() == 1
         ):
-            if text.find(literal[LiteralNode].value) < 0:
+            if text.find(literal[LiteralNode].value).or_else(-1) < 0:
                 return 0
     comptime if (
         plan.required_literal_index < 0

@@ -3,12 +3,38 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 from moregex import Regex
+from moregex._ast import CaptureNode, LiteralNode, RegexNode
 from moregex._ast_equal import _same_ast_node, _same_bracket_class
 from moregex._width import (
     _semantic_fixed_width,
     _semantic_maximum_width,
     _semantic_minimum_width,
 )
+
+
+def test_native_enum_payload_access() raises:
+    comptime literal = RegexNode.Literal(LiteralNode("ab"))
+    comptime assert literal.isa[LiteralNode]()
+    comptime assert literal[LiteralNode].value == "ab"
+
+    var node = literal
+    match node:
+        case .Literal(ref payload):
+            payload.value += "c"
+        case _:
+            assert_true(False, "expected a literal node")
+    assert_equal(node[LiteralNode].value, "abc")
+
+    var copied = node.copy()
+    node[LiteralNode].value += "d"
+    assert_equal(node[LiteralNode].value, "abcd")
+    assert_equal(copied[LiteralNode].value, "abc")
+
+    node = .Capture(CaptureNode(3, 1))
+    assert_true(node.isa[CaptureNode]())
+    assert_false(node.isa[LiteralNode]())
+    assert_equal(node[CaptureNode].child, 3)
+    assert_equal(node[CaptureNode].index, 1)
 
 
 def test_shared_width_analysis() raises:

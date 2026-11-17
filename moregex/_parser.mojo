@@ -217,8 +217,10 @@ struct _Parser(Movable):
             highs[0] = value
             lows[1] = value - (ord("a") - ord("A"))
             highs[1] = lows[1]
-            return self.add(BracketClassNode(lows, highs, 2, False))
-        return self.add(LiteralNode(ch))
+            return self.add(
+                RegexNode.BracketClass(BracketClassNode(lows, highs, 2, False))
+            )
+        return self.add(RegexNode.Literal(LiteralNode(ch)))
 
     def parse_group(mut self) raises -> Int:
         """Parse a capturing-equivalent or inline-flag group after `(`."""
@@ -229,7 +231,9 @@ struct _Parser(Movable):
             var capture_index = self.capture_count
             var child = self.parse_or()
             self.finish_group()
-            return self.add(CaptureNode(child, capture_index))
+            return self.add(
+                RegexNode.Capture(CaptureNode(child, capture_index))
+            )
 
         _ = self.advance_byte()
         if self.peek_byte() == ord(":"):
@@ -257,7 +261,7 @@ struct _Parser(Movable):
 
         if self.peek_byte() == ord(")"):
             _ = self.advance_byte()
-            return self.add(EmptyNode())
+            return self.add(RegexNode.Empty(EmptyNode()))
         if self.peek_byte() != ord(":"):
             raise Error("expected ':' or ')' after inline flags")
         _ = self.advance_byte()
@@ -289,7 +293,7 @@ struct _Parser(Movable):
         var values = StaticTuple[Int, MAX_BRANCHES]()
         for i in range(len(options)):
             values[i] = options[i]
-        return self.add(OrNode(values, len(options)))
+        return self.add(RegexNode.Or(OrNode(values, len(options))))
 
     def parse_sequence(mut self) raises -> Int:
         var items = List[Int]()
@@ -300,7 +304,7 @@ struct _Parser(Movable):
             items.append(self.parse_repeat())
 
         if len(items) == 0:
-            return self.add(EmptyNode())
+            return self.add(RegexNode.Empty(EmptyNode()))
         if len(items) == 1:
             return items[0]
         if len(items) > MAX_SEQUENCE_ITEMS:
@@ -309,7 +313,7 @@ struct _Parser(Movable):
         var values = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
         for i in range(len(items)):
             values[i] = items[i]
-        return self.add(SequenceNode(values, len(items)))
+        return self.add(RegexNode.Sequence(SequenceNode(values, len(items))))
 
     def parse_repeat(mut self) raises -> Int:
         var child = self.parse_primary()
@@ -348,7 +352,9 @@ struct _Parser(Movable):
         if self.peek_byte() == ord("?"):
             _ = self.advance_byte()
             greedy = False
-        return self.add(RepeatNode(child, minimum, maximum, greedy))
+        return self.add(
+            RegexNode.Repeat(RepeatNode(child, minimum, maximum, greedy))
+        )
 
     def parse_number(mut self) raises -> Int:
         if not (ord("0") <= self.peek_byte() <= ord("9")):
@@ -472,7 +478,9 @@ struct _Parser(Movable):
             static_lows[i] = lows[i]
             static_highs[i] = highs[i]
         return self.add(
-            BracketClassNode(static_lows, static_highs, len(lows), negated)
+            RegexNode.BracketClass(
+                BracketClassNode(static_lows, static_highs, len(lows), negated)
+            )
         )
 
     def parse_primary(mut self) raises -> Int:
@@ -489,23 +497,37 @@ struct _Parser(Movable):
             _ = self.advance_byte()
             if self.unicode:
                 if self.dot_all:
-                    return self.add(CharClassNode(CHAR_UNICODE_DOTALL))
-                return self.add(CharClassNode(CHAR_UNICODE_DOT))
+                    return self.add(
+                        RegexNode.CharClass(CharClassNode(CHAR_UNICODE_DOTALL))
+                    )
+                return self.add(
+                    RegexNode.CharClass(CharClassNode(CHAR_UNICODE_DOT))
+                )
             if self.dot_all:
-                return self.add(CharClassNode(CHAR_BYTE_DOTALL))
-            return self.add(CharClassNode(CHAR_BYTE_DOT))
+                return self.add(
+                    RegexNode.CharClass(CharClassNode(CHAR_BYTE_DOTALL))
+                )
+            return self.add(RegexNode.CharClass(CharClassNode(CHAR_BYTE_DOT)))
 
         if first == ord("^"):
             _ = self.advance_byte()
             if self.multi_line:
-                return self.add(ZeroWidthNode(ASSERT_LINE_START))
-            return self.add(ZeroWidthNode(ASSERT_INPUT_START))
+                return self.add(
+                    RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_LINE_START))
+                )
+            return self.add(
+                RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_INPUT_START))
+            )
 
         if first == ord("$"):
             _ = self.advance_byte()
             if self.multi_line:
-                return self.add(ZeroWidthNode(ASSERT_LINE_END))
-            return self.add(ZeroWidthNode(ASSERT_INPUT_END))
+                return self.add(
+                    RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_LINE_END))
+                )
+            return self.add(
+                RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_INPUT_END))
+            )
 
         if first == ord("\\"):
             _ = self.advance_byte()
@@ -514,17 +536,21 @@ struct _Parser(Movable):
             var escaped = self.advance_codepoint()
             var class_kind = _escaped_class_kind(ord(escaped))
             if class_kind >= 0:
-                return self.add(CharClassNode(class_kind))
+                return self.add(RegexNode.CharClass(CharClassNode(class_kind)))
             if escaped == "b":
-                return self.add(ZeroWidthNode(ASSERT_WORD_BOUNDARY))
+                return self.add(
+                    RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_WORD_BOUNDARY))
+                )
             if escaped == "B":
-                return self.add(ZeroWidthNode(ASSERT_NON_WORD_BOUNDARY))
+                return self.add(
+                    RegexNode.ZeroWidth(ZeroWidthNode(ASSERT_NON_WORD_BOUNDARY))
+                )
             if escaped == "n":
-                return self.add(LiteralNode("\n"))
+                return self.add(RegexNode.Literal(LiteralNode("\n")))
             if escaped == "r":
-                return self.add(LiteralNode("\r"))
+                return self.add(RegexNode.Literal(LiteralNode("\r")))
             if escaped == "t":
-                return self.add(LiteralNode("\t"))
+                return self.add(RegexNode.Literal(LiteralNode("\t")))
             return self.add_literal(String(escaped))
 
         if (
@@ -544,7 +570,7 @@ struct _Parser(Movable):
         var literal = String()
         literal += self.advance_codepoint()
         if _is_repeat_operator(self.peek_byte()):
-            return self.add(LiteralNode(literal))
+            return self.add(RegexNode.Literal(LiteralNode(literal)))
 
         while True:
             first = self.peek_byte()
@@ -571,4 +597,4 @@ struct _Parser(Movable):
                 if _is_repeat_operator(after):
                     break
             literal += self.advance_codepoint()
-        return self.add(LiteralNode(literal))
+        return self.add(RegexNode.Literal(LiteralNode(literal)))

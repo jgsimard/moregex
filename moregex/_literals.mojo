@@ -498,7 +498,7 @@ def _count_literal_alternation_find[
     var candidates = StaticTuple[Int, MAX_BRANCHES]()
     comptime for i in range(alternation.count):
         comptime literal = nodes[alternation.options[i]][LiteralNode]
-        candidates[i] = text.find(literal.value)
+        candidates[i] = text.find(literal.value).or_else(-1)
 
     var total = 0
     while True:
@@ -522,7 +522,7 @@ def _count_literal_alternation_find[
         comptime for i in range(alternation.count):
             if candidates[i] >= 0 and candidates[i] < next_start:
                 comptime literal = nodes[alternation.options[i]][LiteralNode]
-                candidates[i] = text.find(literal.value, next_start)
+                candidates[i] = text.find(literal.value, next_start).or_else(-1)
     return total
 
 

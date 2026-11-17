@@ -256,20 +256,25 @@ def _search_literal_dot_infix[
     comptime repeat = nodes[sequence.items[offset + 1]][RepeatNode]
     comptime dot = nodes[repeat.child][CharClassNode]
     comptime suffix = nodes[sequence.items[offset + 2]][LiteralNode]
-    var start = text.find(prefix.value)
+    var start = text.find(prefix.value).or_else(-1)
     if start < 0:
         return False
     comptime if dot.kind == CHAR_BYTE_DOTALL:
-        return text.find(suffix.value, start + prefix.value.byte_length()) >= 0
+        return (
+            text.find(suffix.value, start + prefix.value.byte_length()).or_else(
+                -1
+            )
+            >= 0
+        )
     while start >= 0:
         var content_start = start + prefix.value.byte_length()
-        var suffix_start = text.find(suffix.value, content_start)
-        var newline = text.find("\n", content_start)
+        var suffix_start = text.find(suffix.value, content_start).or_else(-1)
+        var newline = text.find("\n", content_start).or_else(-1)
         if suffix_start >= 0 and (newline < 0 or suffix_start <= newline):
             return True
         if newline < 0:
             return False
-        start = text.find(prefix.value, newline + 1)
+        start = text.find(prefix.value, newline + 1).or_else(-1)
     return False
 
 
@@ -391,17 +396,17 @@ def _grep_prefixed_infix[
 
     var total = 0
     var line_start = 0
-    var line_end = text.find("\n")
+    var line_end = text.find("\n").or_else(-1)
     if line_end < 0:
         line_end = length
     var search_start = 0
     while search_start < length:
-        var delimiter = text.find(literal.value, search_start)
+        var delimiter = text.find(literal.value, search_start).or_else(-1)
         if delimiter < 0:
             break
         while delimiter >= line_end and line_end < length:
             line_start = line_end + 1
-            line_end = text.find("\n", line_start)
+            line_end = text.find("\n", line_start).or_else(-1)
             if line_end < 0:
                 line_end = length
 
@@ -659,7 +664,7 @@ def _count_word_run_literal_suffix[
     var length = text.byte_length()
     var total = 0
     var minimum_start = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         var end = candidate + literal_length
         if end == length or not _is_ascii_word(Int(bytes[end])):
@@ -673,9 +678,9 @@ def _count_word_run_literal_suffix[
             ):
                 total += _match_checksum[sum_spans](end - start)
                 minimum_start = end
-                candidate = text.find(literal.value, end)
+                candidate = text.find(literal.value, end).or_else(-1)
                 continue
-        candidate = text.find(literal.value, candidate + 1)
+        candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return total
 
 

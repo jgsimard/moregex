@@ -745,7 +745,7 @@ def _count_utf8_class_separated_literal_infix[
     var length = len(bytes)
     var total = 0
     var minimum_start = 0
-    var candidate = text.find(literal.value)
+    var candidate = text.find(literal.value).or_else(-1)
     while candidate >= 0:
         var separator_start = candidate
         var separator_count = 0
@@ -792,9 +792,9 @@ def _count_utf8_class_separated_literal_infix[
         ):
             total += _match_checksum[sum_spans](end - start)
             minimum_start = end
-            candidate = text.find(literal.value, minimum_start)
+            candidate = text.find(literal.value, minimum_start).or_else(-1)
         else:
-            candidate = text.find(literal.value, candidate + 1)
+            candidate = text.find(literal.value, candidate + 1).or_else(-1)
     return total
 
 

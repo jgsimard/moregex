@@ -174,7 +174,7 @@ def _search_planned[regex: Regex](text: StringSpan) -> Bool:
     comptime if root.isa[LiteralNode]():
         comptime if _static_source_is_root_literal[regex]():
             return _search_static_literal[regex.source](text)
-        return text.find(root[LiteralNode].value) >= 0
+        return text.find(root[LiteralNode].value).or_else(-1) >= 0
     comptime plan = _execution_plan[regex]()
     if plan.rejects_length(text.byte_length()):
         return False
@@ -279,7 +279,7 @@ def _search_span_impl[regex: Regex](text: StringSpan) -> Bool:
         comptime literal = root[LiteralNode]
         comptime if _static_source_is_root_literal[regex]():
             return _search_static_literal[regex.source](text)
-        return text.find(literal.value) >= 0
+        return text.find(literal.value).or_else(-1) >= 0
     comptime if _is_prefixed_infix_search[regex.nodes, root]():
         return _search_prefixed_infix[regex.nodes, root](text)
     return _search_planned[regex](text)
@@ -589,13 +589,13 @@ def _count_literal_root[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
             )
     comptime if _static_source_is_root_literal[regex]():
         return _count_static_literal[regex.source, sum_spans](text)
-    var start = text.find(literal.value)
+    var start = text.find(literal.value).or_else(-1)
     if start < 0:
         return 0
     var total = _match_checksum[sum_spans](literal_length)
     while start + 2 * literal_length <= text.byte_length():
         var next_start = start + literal_length
-        start = text.find(literal.value, next_start)
+        start = text.find(literal.value, next_start).or_else(-1)
         if start < 0:
             break
         total += _match_checksum[sum_spans](literal_length)

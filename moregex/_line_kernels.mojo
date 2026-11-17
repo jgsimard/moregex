@@ -40,7 +40,7 @@ def _count_anchored_prefix_delimited_lines[
     var total = 0
     var line_start = 0
     while line_start < length:
-        var newline = text.find("\n", line_start)
+        var newline = text.find("\n", line_start).or_else(-1)
         var line_end = length if newline < 0 else newline
         if line_end > line_start and Int(bytes[line_end - 1]) == ord("\r"):
             line_end -= 1
@@ -79,7 +79,7 @@ def _count_anchored_lazy_literal_lines[
     var line_start = 0
     var length = text.byte_length()
     while line_start < length:
-        var newline = text.find("\n", line_start)
+        var newline = text.find("\n", line_start).or_else(-1)
         var line_end = newline
         if newline < 0:
             line_end = length
@@ -92,7 +92,7 @@ def _count_anchored_lazy_literal_lines[
             var candidate = line.find(
                 search_literal.value,
                 prefix_end + prefix_literal.value.byte_length(),
-            )
+            ).or_else(-1)
             while candidate >= 0:
                 var suffix = _match_sequence_from[
                     regex.nodes, sequence, plan.suffix_item
@@ -103,7 +103,9 @@ def _count_anchored_lazy_literal_lines[
                 if suffix:
                     total += 1
                     break
-                candidate = line.find(search_literal.value, candidate + 1)
+                candidate = line.find(
+                    search_literal.value, candidate + 1
+                ).or_else(-1)
         if newline < 0:
             break
         line_start = newline + 1
@@ -120,7 +122,7 @@ def _count_line_prefix_run_literal[
     var line_start = 0
     var length = text.byte_length()
     while line_start < length:
-        var newline = text.find("\n", line_start)
+        var newline = text.find("\n", line_start).or_else(-1)
         var line_end = newline
         if newline < 0:
             line_end = length

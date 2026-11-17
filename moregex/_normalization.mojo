@@ -92,14 +92,18 @@ def _append_without_captures(
                 changed = changed or options[i] != alternation.options[i]
             if not changed:
                 return node_index
-            result.append(OrNode(options, alternation.count))
+            result.append(RegexNode.Or(OrNode(options, alternation.count)))
             return len(result) - 1
         case .Repeat(ref repeat):
             var child = _append_without_captures(nodes, repeat.child, result)
             if child == repeat.child:
                 return node_index
             result.append(
-                RepeatNode(child, repeat.minimum, repeat.maximum, repeat.greedy)
+                RegexNode.Repeat(
+                    RepeatNode(
+                        child, repeat.minimum, repeat.maximum, repeat.greedy
+                    )
+                )
             )
             return len(result) - 1
         case .Sequence(ref sequence):
@@ -112,7 +116,9 @@ def _append_without_captures(
                 changed = changed or items[i] != sequence.items[i]
             if not changed:
                 return node_index
-            result.append(SequenceNode(items, sequence.count))
+            result.append(
+                RegexNode.Sequence(SequenceNode(items, sequence.count))
+            )
             return len(result) - 1
         case .Capture(ref capture):
             return _append_without_captures(nodes, capture.child, result)
@@ -186,11 +192,16 @@ def _normalize_literal_cartesian(
             static_lows[item] = lows[item]
             static_highs[item] = highs[item]
         items[position] = _add_node(
-            nodes, BracketClassNode(static_lows, static_highs, len(lows), False)
+            nodes,
+            RegexNode.BracketClass(
+                BracketClassNode(static_lows, static_highs, len(lows), False)
+            ),
         )
     if byte_length == 1:
         return items[0]
-    return _add_node(nodes, SequenceNode(items, byte_length))
+    return _add_node(
+        nodes, RegexNode.Sequence(SequenceNode(items, byte_length))
+    )
 
 
 def _normalize_utf8_class_or(
@@ -232,7 +243,10 @@ def _normalize_utf8_class_or(
         static_lows[i] = lows[i]
         static_highs[i] = highs[i]
     var merged = _add_node(
-        nodes, BracketClassNode(static_lows, static_highs, len(lows), False)
+        nodes,
+        RegexNode.BracketClass(
+            BracketClassNode(static_lows, static_highs, len(lows), False)
+        ),
     )
     var options = StaticTuple[Int, MAX_BRANCHES]()
     var count = 0
@@ -247,7 +261,7 @@ def _normalize_utf8_class_or(
         else:
             options[count] = option_index
             count += 1
-    return _add_node(nodes, OrNode(options, count))
+    return _add_node(nodes, RegexNode.Or(OrNode(options, count)))
 
 
 def _normalize_utf8_repeat(
@@ -262,11 +276,13 @@ def _normalize_utf8_repeat(
         return repeat_index
     return _add_node(
         nodes,
-        RepeatNode(
-            child,
-            repeat.minimum,
-            repeat.maximum,
-            repeat.greedy,
+        RegexNode.Repeat(
+            RepeatNode(
+                child,
+                repeat.minimum,
+                repeat.maximum,
+                repeat.greedy,
+            )
         ),
     )
 
@@ -288,7 +304,9 @@ def _normalize_utf8_repeat_classes(
         changed = changed or items[i] != sequence.items[i]
     if not changed:
         return root_index
-    return _add_node(nodes, SequenceNode(items, sequence.count))
+    return _add_node(
+        nodes, RegexNode.Sequence(SequenceNode(items, sequence.count))
+    )
 
 
 def _normalize_root_utf8_repeat(
@@ -377,12 +395,17 @@ def _normalize_root_utf8_repeat(
             static_lows[item] = lows[item]
             static_highs[item] = highs[item]
         var suffix_index = _add_node(
-            nodes, BracketClassNode(static_lows, static_highs, len(lows), False)
+            nodes,
+            RegexNode.BracketClass(
+                BracketClassNode(static_lows, static_highs, len(lows), False)
+            ),
         )
         var items = StaticTuple[Int, MAX_SEQUENCE_ITEMS]()
         items[0] = first_index
         items[1] = suffix_index
-        factored.append(_add_node(nodes, SequenceNode(items, 2)))
+        factored.append(
+            _add_node(nodes, RegexNode.Sequence(SequenceNode(items, 2)))
+        )
     # Equal-width byte-sequence alternatives have identical observable
     # matching behavior. Test broader ranges first so common Unicode
     # blocks do not pay for narrow exceptional branches on every scalar.
@@ -408,14 +431,18 @@ def _normalize_root_utf8_repeat(
     var options = StaticTuple[Int, MAX_BRANCHES]()
     for i in range(len(factored)):
         options[i] = factored[i]
-    var child_index = _add_node(nodes, OrNode(options, len(factored)))
+    var child_index = _add_node(
+        nodes, RegexNode.Or(OrNode(options, len(factored)))
+    )
     return _add_node(
         nodes,
-        RepeatNode(
-            child_index,
-            repeat.minimum,
-            repeat.maximum,
-            repeat.greedy,
+        RegexNode.Repeat(
+            RepeatNode(
+                child_index,
+                repeat.minimum,
+                repeat.maximum,
+                repeat.greedy,
+            )
         ),
     )
 

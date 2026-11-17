@@ -136,7 +136,7 @@ def _grep_search_lines[regex: Regex](text: String) -> Int:
     var bytes = text.as_bytes()
     var line_start = 0
     while line_start < length:
-        var newline = text.find("\n", line_start)
+        var newline = text.find("\n", line_start).or_else(-1)
         var line_end = length if newline < 0 else newline
         if line_end > line_start and Int(bytes[line_end - 1]) == 13:
             line_end -= 1
@@ -155,7 +155,7 @@ def _grep_capture_lines[regex: Regex](text: String) raises -> Int:
     var bytes = text.as_bytes()
     var line_start = 0
     while line_start < length:
-        var newline = text.find("\n", line_start)
+        var newline = text.find("\n", line_start).or_else(-1)
         var line_end = length if newline < 0 else newline
         if line_end > line_start and Int(bytes[line_end - 1]) == 13:
             line_end -= 1

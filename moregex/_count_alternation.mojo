@@ -392,7 +392,7 @@ def _bounded_line_gap_alternation_match_length[
         var bytes = text.as_bytes()
         var line_start = position
         while line_start < text.byte_length():
-            var newline = text.find("\n", line_start)
+            var newline = text.find("\n", line_start).or_else(-1)
             var line_end = text.byte_length() if newline < 0 else newline
             var content = line_start
             while content < line_end and _accepts_class[CHAR_ASCII_WHITESPACE](
@@ -410,11 +410,11 @@ def _bounded_line_gap_alternation_match_length[
                 break
             line_start = newline + 1
 
-        var candidate = text.find(suffix.value, position)
+        var candidate = text.find(suffix.value, position).or_else(-1)
         var best_end = -1
         while candidate >= 0 and candidate <= limit:
             best_end = candidate + suffix.value.byte_length()
-            candidate = text.find(suffix.value, candidate + 1)
+            candidate = text.find(suffix.value, candidate + 1).or_else(-1)
         if best_end >= 0:
             return best_end - start
     return -1
@@ -545,7 +545,7 @@ def _count_prefixed_alternation[
             regex.nodes, alternation.options[i]
         ]()
         comptime prefix = regex.nodes[prefix_index][LiteralNode]
-        candidates[i] = text.find(prefix.value)
+        candidates[i] = text.find(prefix.value).or_else(-1)
 
     while True:
         var candidate = -1
@@ -570,5 +570,7 @@ def _count_prefixed_alternation[
                     regex.nodes, alternation.options[i]
                 ]()
                 comptime prefix = regex.nodes[prefix_index][LiteralNode]
-                candidates[i] = text.find(prefix.value, search_start)
+                candidates[i] = text.find(prefix.value, search_start).or_else(
+                    -1
+                )
     return total

@@ -91,18 +91,20 @@ def _find_literal_delimited[
     plan: _LiteralDelimitedPlan
 ](text: StringSpan, start: Int = 0) -> Optional[_MatchSpan]:
     """Find the first opener and its earliest valid closer without an NFA."""
-    var candidate = text.find(plan.prefix, start)
+    var candidate = text.find(plan.prefix, start).or_else(-1)
     var suffix_start = -1
     while candidate >= 0:
         var content_start = candidate + plan.prefix.byte_length()
         # Reuse a closer across failed lines rather than rescanning the tail.
         if suffix_start < content_start:
-            suffix_start = text.find(plan.suffix, content_start)
+            suffix_start = text.find(plan.suffix, content_start).or_else(-1)
         if suffix_start < 0:
             return None
         comptime if not plan.dotall:
             # Limit the scan to this body so repeated matches stay linear.
-            var newline = text[byte=content_start:suffix_start].find("\n")
+            var newline = (
+                text[byte=content_start:suffix_start].find("\n").or_else(-1)
+            )
             if newline >= 0:
                 # A later opener may itself contain this LF. Retain candidates
                 # whose prefix ends after it, including overlapping prefixes.
@@ -110,7 +112,7 @@ def _find_literal_delimited[
                     candidate + 1,
                     content_start + newline + 1 - plan.prefix.byte_length(),
                 )
-                candidate = text.find(plan.prefix, next_start)
+                candidate = text.find(plan.prefix, next_start).or_else(-1)
                 continue
         return _MatchSpan(candidate, suffix_start + plan.suffix.byte_length())
     return None
@@ -142,13 +144,19 @@ def _matches_literal_delimited[
     var suffix_start = text.byte_length() - plan.suffix.byte_length()
     if suffix_start < plan.prefix.byte_length():
         return False
-    if text[byte = 0 : plan.prefix.byte_length()].find(plan.prefix) != 0:
+    if (
+        text[byte = 0 : plan.prefix.byte_length()].find(plan.prefix).or_else(-1)
+        != 0
+    ):
         return False
-    if text.find(plan.suffix, suffix_start) != suffix_start:
+    if text.find(plan.suffix, suffix_start).or_else(-1) != suffix_start:
         return False
     # Full matching can extend past earlier closers to consume the entire input.
     comptime if not plan.dotall:
         return (
-            text[byte = plan.prefix.byte_length() : suffix_start].find("\n") < 0
+            text[byte = plan.prefix.byte_length() : suffix_start]
+            .find("\n")
+            .or_else(-1)
+            < 0
         )
     return True

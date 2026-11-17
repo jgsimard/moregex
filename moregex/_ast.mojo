@@ -1,8 +1,8 @@
 """Compile-time regex syntax tree types and semantic constants."""
 
 from std.builtin.rebind import rebind
-from std.builtin.variadics import ParameterList, TypeList, _MLIR
-from std.utils import StaticTuple, Variant
+from std.builtin.variadics import TypeList
+from std.utils import StaticTuple
 
 
 comptime MAX_BRANCHES = 64
@@ -84,90 +84,37 @@ struct CaptureNode(TrivialRegisterPassable):
     var index: Int
 
 
-struct RegexNode(EnumLike, ImplicitlyCopyable):
+__enum RegexNode(ImplicitlyCopyable):
     """A regex AST node with named cases for exhaustive pattern matching."""
 
-    comptime _Storage = Variant[
-        EmptyNode,
-        LiteralNode,
-        CharClassNode,
-        BracketClassNode,
-        ZeroWidthNode,
-        OrNode,
-        RepeatNode,
-        SequenceNode,
-        CaptureNode,
-    ]
+    case Empty(EmptyNode)
+    case Literal(LiteralNode)
+    case CharClass(CharClassNode)
+    case BracketClass(BracketClassNode)
+    case ZeroWidth(ZeroWidthNode)
+    case Or(OrNode)
+    case Repeat(RepeatNode)
+    case Sequence(SequenceNode)
+    case Capture(CaptureNode)
 
-    var _value: Self._Storage
-
-    comptime _enum_case_names = ParameterList.of[
-        "Empty".value,
-        "Literal".value,
-        "CharClass".value,
-        "BracketClass".value,
-        "ZeroWidth".value,
-        "Or".value,
-        "Repeat".value,
-        "Sequence".value,
-        "Capture".value,
-    ].values
-    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        Trait=AnyType,
-        EmptyNode,
-        LiteralNode,
-        CharClassNode,
-        BracketClassNode,
-        ZeroWidthNode,
-        OrNode,
-        RepeatNode,
-        SequenceNode,
-        CaptureNode,
-    ].values
-
-    @implicit
-    def __init__[T: Movable](out self, var value: T):
-        self._value = Self._Storage(value^)
+    @staticmethod
+    def _case_index[T: AnyType]() -> Int:
+        """Find a payload type in the compiler-generated case metadata."""
+        comptime Cases = TypeList[Trait=AnyType, Self._enum_case_types]
+        comptime for i in range(Cases.length):
+            comptime if Cases()[i] == Tuple[T]:
+                return i
+        return -1
 
     @always_inline
     def isa[T: AnyType](self) -> Bool:
-        return self._value.isa[T]()
+        comptime case_index = Self._case_index[T]()
+        comptime assert case_index >= 0, "unsupported regex node payload"
+        return self._get_enum_discriminant() == case_index
 
     @always_inline
     def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
-        return Pointer(to=self._value[T]).unsafe_origin_cast[
-            origin_of(self)
-        ]()[]
-
-    @always_inline
-    def _get_enum_discriminant(self) -> Int:
-        if self._value.isa[EmptyNode]():
-            return 0
-        if self._value.isa[LiteralNode]():
-            return 1
-        if self._value.isa[CharClassNode]():
-            return 2
-        if self._value.isa[BracketClassNode]():
-            return 3
-        if self._value.isa[ZeroWidthNode]():
-            return 4
-        if self._value.isa[OrNode]():
-            return 5
-        if self._value.isa[RepeatNode]():
-            return 6
-        if self._value.isa[SequenceNode]():
-            return 7
-        return 8
-
-    @always_inline
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
-        id
-    ]:
-        comptime Payload = TypeList[Trait=AnyType, Self._enum_case_types]()[id]
-        return rebind[Payload](
-            Pointer(to=self._value.unsafe_get[Payload]()).unsafe_origin_cast[
-                origin_of(self)
-            ]()[]
-        )
+        comptime case_index = Self._case_index[T]()
+        comptime assert case_index >= 0, "unsupported regex node payload"
+        debug_assert(self.isa[T](), "wrong regex node case")
+        return rebind[Tuple[T]](self._unsafe_get_enum_payload[case_index]())[0]
