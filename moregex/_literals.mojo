@@ -424,12 +424,12 @@ def _literal_alternation_candidate_mask[
         var eighth_values = text.unsafe_ptr().unsafe_load[
             width=width, alignment=1
         ](offset + 7)
-        comptime __guard not (
+        comptime if (
             width == 64
             and alternation.count <= 8
             and CompilationTarget.is_x86()
             and CompilationTarget.has_avx512f()
-        ) else:
+        ):
             return _literal_alternation_teddy_mask[nodes, alternation, width](
                 first_values, second_values, eighth_values
             )

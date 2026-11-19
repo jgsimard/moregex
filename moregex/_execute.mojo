@@ -188,20 +188,20 @@ def _search_planned[regex: Regex](text: StringSpan) -> Bool:
         # An exact leading literal identifies complete match starts. Avoid
         # keeping an unanchored NFA active at every byte when those starts are
         # sparse; run the ordered automaton only at literal candidates.
-        comptime if (
+        comptime __guard (
             plan.search_strategy != _SEARCH_START_ANCHORED
             and _has_leading_literal_prefilter[regex]()
-        ):
-            var candidate = _prefilter_start[regex](text, 0)
-            if candidate < 0:
-                return False
-            if _nfa_match_at[regex](text, candidate):
-                return True
-            # Repeated anchored attempts can become quadratic when the prefix
-            # is dense. The first candidate is now disproven, so resume the
-            # linear unanchored executor immediately after it.
-            return _nfa_search_from[regex](text, candidate + 1)
-        return _nfa_search_from[regex](text, 0)
+        ) else:
+            return _nfa_search_from[regex](text, 0)
+        var candidate = _prefilter_start[regex](text, 0)
+        if candidate < 0:
+            return False
+        if _nfa_match_at[regex](text, candidate):
+            return True
+        # Repeated anchored attempts can become quadratic when the prefix
+        # is dense. The first candidate is now disproven, so resume the
+        # linear unanchored executor immediately after it.
+        return _nfa_search_from[regex](text, candidate + 1)
     comptime if plan.search_strategy == _SEARCH_START_ANCHORED:
         return Bool(_match_node[regex.nodes, regex.root](text, 0))
     comptime if _is_multiline_whole_line[regex.nodes, regex.root]():

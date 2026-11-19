@@ -64,22 +64,22 @@ def matches_span[regex: Regex](text: StringSpan) -> Bool:
 def matches[regex: Regex](text: String) -> Bool:
     """Return whether text is a full match for a compile-time regex."""
     comptime root = regex.nodes[regex.root]
-    comptime if root.isa[LiteralNode]():
-        comptime literal = root[LiteralNode]
-        comptime literal_length = literal.value.byte_length()
-        if text.byte_length() != literal_length:
-            return False
-        comptime if literal_length == 0:
-            return True
-        comptime first = Int(literal.value.as_bytes()[0])
-        comptime last = Int(literal.value.as_bytes()[literal_length - 1])
-        var text_bytes = text.as_bytes()
-        if (
-            Int(text_bytes[0]) != first
-            or Int(text_bytes[literal_length - 1]) != last
-        ):
-            return False
-        comptime if _static_source_is_root_literal[regex]():
-            return text == regex.source
-        return text == literal.value
-    return _matches_span_impl[regex](text[byte = 0 : text.byte_length()])
+    comptime __guard root.isa[LiteralNode]() else:
+        return _matches_span_impl[regex](text[byte = 0 : text.byte_length()])
+    comptime literal = root[LiteralNode]
+    comptime literal_length = literal.value.byte_length()
+    if text.byte_length() != literal_length:
+        return False
+    comptime if literal_length == 0:
+        return True
+    comptime first = Int(literal.value.as_bytes()[0])
+    comptime last = Int(literal.value.as_bytes()[literal_length - 1])
+    var text_bytes = text.as_bytes()
+    if (
+        Int(text_bytes[0]) != first
+        or Int(text_bytes[literal_length - 1]) != last
+    ):
+        return False
+    comptime if _static_source_is_root_literal[regex]():
+        return text == regex.source
+    return text == literal.value
