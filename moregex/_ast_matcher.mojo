@@ -19,117 +19,116 @@ from ._byte_scan import _one_byte_run_end
 def _match_sequence_from[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return _MatchResult(0)
-    else:
-        comptime child_index = sequence.items[item]
-        comptime child = nodes[child_index]
-        comptime match child:
-            case .Or(alternation):
-                comptime for option in range(alternation.count):
-                    var alternative = _match_node[
-                        nodes, alternation.options[option]
-                    ](text, start)
-                    if alternative:
-                        var alternative_length = (
-                            alternative.unsafe_value().consumed()
+    comptime child_index = sequence.items[item]
+    comptime child = nodes[child_index]
+    comptime match child:
+        case .Or(alternation):
+            comptime for option in range(alternation.count):
+                var alternative = _match_node[
+                    nodes, alternation.options[option]
+                ](text, start)
+                if alternative:
+                    var alternative_length = (
+                        alternative.unsafe_value().consumed()
+                    )
+                    var suffix = _match_sequence_from[
+                        nodes, sequence, item + 1
+                    ](text, start + alternative_length)
+                    if suffix:
+                        return _MatchResult(
+                            alternative_length
+                            + suffix.unsafe_value().consumed()
                         )
-                        var suffix = _match_sequence_from[
+            return None
+        case .Repeat(repeat):
+            comptime child_width = _fixed_node_width[nodes, repeat.child]()
+            comptime if child_width > 0:
+                comptime if not repeat.greedy:
+                    var lazy_count = 0
+                    var lazy_consumed = 0
+                    while lazy_count < repeat.minimum:
+                        var required = _match_node[nodes, repeat.child](
+                            text, start + lazy_consumed
+                        )
+                        if not required:
+                            return None
+                        lazy_count += 1
+                        lazy_consumed += child_width
+
+                    while True:
+                        var lazy_suffix = _match_sequence_from[
                             nodes, sequence, item + 1
-                        ](text, start + alternative_length)
-                        if suffix:
+                        ](text, start + lazy_consumed)
+                        if lazy_suffix:
                             return _MatchResult(
-                                alternative_length
-                                + suffix.unsafe_value().consumed()
+                                lazy_consumed
+                                + lazy_suffix.unsafe_value().consumed()
                             )
-                return None
-            case .Repeat(repeat):
-                comptime child_width = _fixed_node_width[nodes, repeat.child]()
-                comptime if child_width > 0:
-                    comptime if not repeat.greedy:
-                        var lazy_count = 0
-                        var lazy_consumed = 0
-                        while lazy_count < repeat.minimum:
-                            var required = _match_node[nodes, repeat.child](
-                                text, start + lazy_consumed
-                            )
-                            if not required:
-                                return None
-                            lazy_count += 1
-                            lazy_consumed += child_width
-
-                        while True:
-                            var lazy_suffix = _match_sequence_from[
-                                nodes, sequence, item + 1
-                            ](text, start + lazy_consumed)
-                            if lazy_suffix:
-                                return _MatchResult(
-                                    lazy_consumed
-                                    + lazy_suffix.unsafe_value().consumed()
-                                )
-                            comptime if repeat.maximum >= 0:
-                                if lazy_count >= repeat.maximum:
-                                    break
-                            var next = _match_node[nodes, repeat.child](
-                                text, start + lazy_consumed
-                            )
-                            if not next:
-                                break
-                            lazy_count += 1
-                            lazy_consumed += child_width
-                        return None
-
-                    var count = 0
-                    var consumed = 0
-                    comptime if _is_one_byte_class_node[nodes, repeat.child]():
-                        var limit = text.byte_length()
                         comptime if repeat.maximum >= 0:
-                            limit = start + min(repeat.maximum, limit - start)
-                        consumed = (
-                            _one_byte_run_end[nodes, repeat.child](
-                                text, start, limit
-                            )
-                            - start
-                        )
-                        count = consumed
-                    else:
-                        while True:
-                            comptime if repeat.maximum >= 0:
-                                if count >= repeat.maximum:
-                                    break
-                            var result = _match_node[nodes, repeat.child](
-                                text, start + consumed
-                            )
-                            if not result:
+                            if lazy_count >= repeat.maximum:
                                 break
-                            count += 1
-                            consumed += child_width
-
-                    while count >= repeat.minimum:
-                        var suffix = _match_sequence_from[
-                            nodes, sequence, item + 1
-                        ](text, start + consumed)
-                        if suffix:
-                            return _MatchResult(
-                                consumed + suffix.unsafe_value().consumed()
-                            )
-                        count -= 1
-                        consumed -= child_width
+                        var next = _match_node[nodes, repeat.child](
+                            text, start + lazy_consumed
+                        )
+                        if not next:
+                            break
+                        lazy_count += 1
+                        lazy_consumed += child_width
                     return None
-            case _:
-                pass
 
-        var result = _match_node[nodes, child_index](text, start)
-        if not result:
-            return None
-        var suffix = _match_sequence_from[nodes, sequence, item + 1](
-            text, start + result.unsafe_value().consumed()
-        )
-        if not suffix:
-            return None
-        return _MatchResult(
-            result.unsafe_value().consumed() + suffix.unsafe_value().consumed()
-        )
+                var count = 0
+                var consumed = 0
+                comptime if _is_one_byte_class_node[nodes, repeat.child]():
+                    var limit = text.byte_length()
+                    comptime if repeat.maximum >= 0:
+                        limit = start + min(repeat.maximum, limit - start)
+                    consumed = (
+                        _one_byte_run_end[nodes, repeat.child](
+                            text, start, limit
+                        )
+                        - start
+                    )
+                    count = consumed
+                else:
+                    while True:
+                        comptime if repeat.maximum >= 0:
+                            if count >= repeat.maximum:
+                                break
+                        var result = _match_node[nodes, repeat.child](
+                            text, start + consumed
+                        )
+                        if not result:
+                            break
+                        count += 1
+                        consumed += child_width
+
+                while count >= repeat.minimum:
+                    var suffix = _match_sequence_from[
+                        nodes, sequence, item + 1
+                    ](text, start + consumed)
+                    if suffix:
+                        return _MatchResult(
+                            consumed + suffix.unsafe_value().consumed()
+                        )
+                    count -= 1
+                    consumed -= child_width
+                return None
+        case _:
+            pass
+
+    var result = _match_node[nodes, child_index](text, start)
+    if not result:
+        return None
+    var suffix = _match_sequence_from[nodes, sequence, item + 1](
+        text, start + result.unsafe_value().consumed()
+    )
+    if not suffix:
+        return None
+    return _MatchResult(
+        result.unsafe_value().consumed() + suffix.unsafe_value().consumed()
+    )
 
 
 @inline(.always)

@@ -424,22 +424,21 @@ def _literal_alternation_candidate_mask[
         var eighth_values = text.unsafe_ptr().unsafe_load[
             width=width, alignment=1
         ](offset + 7)
-        comptime if (
+        comptime __guard not (
             width == 64
             and alternation.count <= 8
             and CompilationTarget.is_x86()
             and CompilationTarget.has_avx512f()
-        ):
+        ) else:
             return _literal_alternation_teddy_mask[nodes, alternation, width](
                 first_values, second_values, eighth_values
             )
-        else:
-            comptime first = nodes[alternation.options[0]][
-                LiteralNode
-            ].value.as_bytes()[0]
-            return first_values.eq(first) & _alternation_two_position_mask[
-                nodes, alternation, 1, 7, False, width
-            ](second_values, eighth_values)
+        comptime first = nodes[alternation.options[0]][
+            LiteralNode
+        ].value.as_bytes()[0]
+        return first_values.eq(first) & _alternation_two_position_mask[
+            nodes, alternation, 1, 7, False, width
+        ](second_values, eighth_values)
     elif (
         alternation.count >= 4 and _all_literal_options[nodes, alternation, 3]()
     ):

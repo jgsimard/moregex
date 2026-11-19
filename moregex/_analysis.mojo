@@ -23,7 +23,7 @@ from ._ast import (
 )
 from std.algorithm.functional import vectorize
 from std.math import iota
-from ._simd import _masked_load_bytes
+from std.sys.intrinsics import masked_load
 
 from ._common import (
     CLASS_SIMD_WIDTH,
@@ -58,49 +58,52 @@ def _anchored_lazy_literal_plan[
 ]() -> Optional[_AnchoredLazyLiteralPlan]:
     """Recognize `^class*LITERAL.*?LITERAL...` on bounded line spans."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count >= 5:
-            comptime prefix_node = nodes[sequence.items[1]]
-            comptime prefix_literal_node = nodes[sequence.items[2]]
-            comptime lazy_node = nodes[sequence.items[3]]
-            comptime search_literal_node = nodes[sequence.items[4]]
-            comptime if (
-                _is_start_assertion_node[nodes, sequence.items[0]]()
-                and prefix_node.isa[RepeatNode]()
-                and prefix_literal_node.isa[LiteralNode]()
-                and lazy_node.isa[RepeatNode]()
-                and search_literal_node.isa[LiteralNode]()
-            ):
-                comptime prefix = prefix_node[RepeatNode]
-                comptime prefix_literal = prefix_literal_node[LiteralNode]
-                comptime lazy = lazy_node[RepeatNode]
-                comptime lazy_child = nodes[lazy.child]
-                comptime search_literal = search_literal_node[LiteralNode]
-                comptime if (
-                    prefix.minimum == 0
-                    and prefix.maximum == -1
-                    and _is_one_byte_class_node[nodes, prefix.child]()
-                    and prefix_literal.value.byte_length() > 0
-                    and not _node_start_accepts[nodes, prefix.child](
-                        Int(prefix_literal.value.as_bytes()[0])
-                    )
-                    and lazy.minimum == 0
-                    and lazy.maximum == -1
-                    and not lazy.greedy
-                    and lazy_child.isa[CharClassNode]()
-                    and (
-                        lazy_child[CharClassNode].kind == CHAR_BYTE_DOT
-                        or lazy_child[CharClassNode].kind == CHAR_UNICODE_DOT
-                    )
-                    and search_literal.value.byte_length() > 0
-                ):
-                    return _AnchoredLazyLiteralPlan(
-                        sequence.items[1],
-                        sequence.items[2],
-                        sequence.items[4],
-                        5,
-                    )
+    comptime __guard node.isa[SequenceNode]() else:
+        return None
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count >= 5 else:
+        return None
+    comptime prefix_node = nodes[sequence.items[1]]
+    comptime prefix_literal_node = nodes[sequence.items[2]]
+    comptime lazy_node = nodes[sequence.items[3]]
+    comptime search_literal_node = nodes[sequence.items[4]]
+    comptime __guard (
+        _is_start_assertion_node[nodes, sequence.items[0]]()
+        and prefix_node.isa[RepeatNode]()
+        and prefix_literal_node.isa[LiteralNode]()
+        and lazy_node.isa[RepeatNode]()
+        and search_literal_node.isa[LiteralNode]()
+    ) else:
+        return None
+    comptime prefix = prefix_node[RepeatNode]
+    comptime prefix_literal = prefix_literal_node[LiteralNode]
+    comptime lazy = lazy_node[RepeatNode]
+    comptime lazy_child = nodes[lazy.child]
+    comptime search_literal = search_literal_node[LiteralNode]
+    comptime if (
+        prefix.minimum == 0
+        and prefix.maximum == -1
+        and _is_one_byte_class_node[nodes, prefix.child]()
+        and prefix_literal.value.byte_length() > 0
+        and not _node_start_accepts[nodes, prefix.child](
+            Int(prefix_literal.value.as_bytes()[0])
+        )
+        and lazy.minimum == 0
+        and lazy.maximum == -1
+        and not lazy.greedy
+        and lazy_child.isa[CharClassNode]()
+        and (
+            lazy_child[CharClassNode].kind == CHAR_BYTE_DOT
+            or lazy_child[CharClassNode].kind == CHAR_UNICODE_DOT
+        )
+        and search_literal.value.byte_length() > 0
+    ):
+        return _AnchoredLazyLiteralPlan(
+            sequence.items[1],
+            sequence.items[2],
+            sequence.items[4],
+            5,
+        )
     return None
 
 
@@ -109,40 +112,41 @@ def _line_prefix_run_literal_plan[
 ]() -> Optional[_LinePrefixRunLiteralPlan]:
     """Recognize `^class*LITERAL.*` for line-oriented execution."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 4:
-            comptime prefix_node = nodes[sequence.items[1]]
-            comptime literal_node = nodes[sequence.items[2]]
-            comptime tail_node = nodes[sequence.items[3]]
-            comptime if (
-                _is_start_assertion_node[nodes, sequence.items[0]]()
-                and prefix_node.isa[RepeatNode]()
-                and literal_node.isa[LiteralNode]()
-                and tail_node.isa[RepeatNode]()
-            ):
-                comptime prefix = prefix_node[RepeatNode]
-                comptime literal = literal_node[LiteralNode]
-                comptime tail = tail_node[RepeatNode]
-                comptime tail_child = nodes[tail.child]
-                comptime if (
-                    prefix.minimum == 0
-                    and prefix.maximum == -1
-                    and literal.value.byte_length() > 0
-                    and not _node_start_accepts[nodes, prefix.child](
-                        Int(literal.value.as_bytes()[0])
-                    )
-                    and tail.minimum == 0
-                    and tail.maximum == -1
-                    and tail_child.isa[CharClassNode]()
-                    and (
-                        tail_child[CharClassNode].kind == CHAR_BYTE_DOT
-                        or tail_child[CharClassNode].kind == CHAR_UNICODE_DOT
-                    )
-                ):
-                    return _LinePrefixRunLiteralPlan(
-                        sequence.items[1], sequence.items[2]
-                    )
+    comptime __guard node.isa[SequenceNode]() else:
+        return None
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 4 else:
+        return None
+    comptime prefix_node = nodes[sequence.items[1]]
+    comptime literal_node = nodes[sequence.items[2]]
+    comptime tail_node = nodes[sequence.items[3]]
+    comptime __guard (
+        _is_start_assertion_node[nodes, sequence.items[0]]()
+        and prefix_node.isa[RepeatNode]()
+        and literal_node.isa[LiteralNode]()
+        and tail_node.isa[RepeatNode]()
+    ) else:
+        return None
+    comptime prefix = prefix_node[RepeatNode]
+    comptime literal = literal_node[LiteralNode]
+    comptime tail = tail_node[RepeatNode]
+    comptime tail_child = nodes[tail.child]
+    comptime if (
+        prefix.minimum == 0
+        and prefix.maximum == -1
+        and literal.value.byte_length() > 0
+        and not _node_start_accepts[nodes, prefix.child](
+            Int(literal.value.as_bytes()[0])
+        )
+        and tail.minimum == 0
+        and tail.maximum == -1
+        and tail_child.isa[CharClassNode]()
+        and (
+            tail_child[CharClassNode].kind == CHAR_BYTE_DOT
+            or tail_child[CharClassNode].kind == CHAR_UNICODE_DOT
+        )
+    ):
+        return _LinePrefixRunLiteralPlan(sequence.items[1], sequence.items[2])
     return None
 
 
@@ -152,11 +156,10 @@ def _all_literal_options[
     """Return at compile time whether every alternative is one literal."""
     comptime for i in range(alternation.count):
         comptime option = nodes[alternation.options[i]]
-        comptime if not option.isa[LiteralNode]():
+        comptime __guard option.isa[LiteralNode]() else:
             return False
-        else:
-            comptime if option[LiteralNode].value.byte_length() < minimum:
-                return False
+        comptime if option[LiteralNode].value.byte_length() < minimum:
+            return False
     return True
 
 
@@ -201,25 +204,20 @@ def _bracket_mask[
 def _sequence_required_literal_index[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ]() -> Int:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return -1
+    comptime child = _required_literal_index[nodes, sequence.items[item]]()
+    comptime suffix = _sequence_required_literal_index[
+        nodes, sequence, item + 1
+    ]()
+    comptime if child < 0:
+        return suffix
+    elif suffix < 0:
+        return child
     else:
-        comptime child = _required_literal_index[nodes, sequence.items[item]]()
-        comptime suffix = _sequence_required_literal_index[
-            nodes, sequence, item + 1
-        ]()
-        comptime if child < 0:
-            return suffix
-        elif suffix < 0:
-            return child
-        else:
-            comptime child_length = nodes[child][
-                LiteralNode
-            ].value.byte_length()
-            comptime suffix_length = nodes[suffix][
-                LiteralNode
-            ].value.byte_length()
-            return child if child_length >= suffix_length else suffix
+        comptime child_length = nodes[child][LiteralNode].value.byte_length()
+        comptime suffix_length = nodes[suffix][LiteralNode].value.byte_length()
+        return child if child_length >= suffix_length else suffix
 
 
 def _required_literal_index[nodes: List[RegexNode], node_index: Int]() -> Int:
@@ -272,23 +270,20 @@ def _one_byte_node_coverage[nodes: List[RegexNode], node_index: Int]() -> Int:
 def _sequence_required_one_byte_node[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int, best: Int
 ]() -> Int:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return best
-    else:
-        comptime child = _required_one_byte_node_index[
-            nodes, sequence.items[item]
-        ]()
-        comptime if child >= 0 and (
-            best < 0
-            or _one_byte_node_coverage[nodes, child]()
-            < _one_byte_node_coverage[nodes, best]()
-        ):
-            return _sequence_required_one_byte_node[
-                nodes, sequence, item + 1, child
-            ]()
+    comptime child = _required_one_byte_node_index[
+        nodes, sequence.items[item]
+    ]()
+    comptime if child >= 0 and (
+        best < 0
+        or _one_byte_node_coverage[nodes, child]()
+        < _one_byte_node_coverage[nodes, best]()
+    ):
         return _sequence_required_one_byte_node[
-            nodes, sequence, item + 1, best
+            nodes, sequence, item + 1, child
         ]()
+    return _sequence_required_one_byte_node[nodes, sequence, item + 1, best]()
 
 
 def _required_one_byte_node_index[
@@ -318,15 +313,14 @@ def _required_one_byte_node_index[
 def _sequence_start_accepts[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](value: Int) -> Bool:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return False
-    else:
-        comptime child = sequence.items[item]
-        if _node_start_accepts[nodes, child](value):
-            return True
-        comptime if _minimum_node_width[nodes, child]() == 0:
-            return _sequence_start_accepts[nodes, sequence, item + 1](value)
-        return False
+    comptime child = sequence.items[item]
+    if _node_start_accepts[nodes, child](value):
+        return True
+    comptime if _minimum_node_width[nodes, child]() == 0:
+        return _sequence_start_accepts[nodes, sequence, item + 1](value)
+    return False
 
 
 @inline(.always)
@@ -365,16 +359,15 @@ def _node_start_accepts[
 def _sequence_start_mask[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return SIMD[.bool, width](fill=False)
-    else:
-        comptime child = sequence.items[item]
-        var accepted = _node_start_mask[nodes, child, width](values)
-        comptime if _minimum_node_width[nodes, child]() == 0:
-            accepted |= _sequence_start_mask[nodes, sequence, item + 1, width](
-                values
-            )
-        return accepted
+    comptime child = sequence.items[item]
+    var accepted = _node_start_mask[nodes, child, width](values)
+    comptime if _minimum_node_width[nodes, child]() == 0:
+        accepted |= _sequence_start_mask[nodes, sequence, item + 1, width](
+            values
+        )
+    return accepted
 
 
 @inline(.always)
@@ -470,20 +463,17 @@ def _start_filter_is_selective[
 def _sequence_has_generic_backtracking_risk[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ]() -> Bool:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return False
-    else:
-        comptime child_index = sequence.items[item]
-        comptime child = nodes[child_index]
-        comptime if item + 1 < sequence.count and child.isa[RepeatNode]():
-            comptime repeat = child[RepeatNode]
-            comptime if repeat.maximum < 0 or repeat.maximum != repeat.minimum:
-                return True
-        comptime if _has_generic_backtracking_risk[nodes, child_index]():
+    comptime child_index = sequence.items[item]
+    comptime child = nodes[child_index]
+    comptime if item + 1 < sequence.count and child.isa[RepeatNode]():
+        comptime repeat = child[RepeatNode]
+        comptime if repeat.maximum < 0 or repeat.maximum != repeat.minimum:
             return True
-        return _sequence_has_generic_backtracking_risk[
-            nodes, sequence, item + 1
-        ]()
+    comptime if _has_generic_backtracking_risk[nodes, child_index]():
+        return True
+    return _sequence_has_generic_backtracking_risk[nodes, sequence, item + 1]()
 
 
 def _has_generic_backtracking_risk[
@@ -551,18 +541,17 @@ def _all_casefold_prefixed_sequence_options[
 ]() -> Bool:
     comptime for i in range(alternation.count):
         comptime node = nodes[alternation.options[i]]
-        comptime if not node.isa[SequenceNode]():
+        comptime __guard node.isa[SequenceNode]() else:
             return False
-        else:
-            comptime sequence = node[SequenceNode]
-            comptime if sequence.count < 3:
-                return False
-            elif (
-                not _is_ascii_fold_pair_node[nodes, sequence.items[0]]()
-                or not _is_ascii_fold_pair_node[nodes, sequence.items[1]]()
-                or not _is_ascii_fold_pair_node[nodes, sequence.items[2]]()
-            ):
-                return False
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count < 3:
+            return False
+        elif (
+            not _is_ascii_fold_pair_node[nodes, sequence.items[0]]()
+            or not _is_ascii_fold_pair_node[nodes, sequence.items[1]]()
+            or not _is_ascii_fold_pair_node[nodes, sequence.items[2]]()
+        ):
+            return False
     return alternation.count > 0
 
 
@@ -571,14 +560,17 @@ def _sequence_prefix_literal_index[
 ]() -> Int:
     """Return a non-empty literal prefix node, or -1 when none exists."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count > 0:
-            comptime prefix_index = sequence.items[0]
-            comptime prefix = nodes[prefix_index]
-            comptime if prefix.isa[LiteralNode]():
-                comptime if prefix[LiteralNode].value.byte_length() > 0:
-                    return prefix_index
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count > 0 else:
+        return -1
+    comptime prefix_index = sequence.items[0]
+    comptime prefix = nodes[prefix_index]
+    comptime __guard prefix.isa[LiteralNode]() else:
+        return -1
+    comptime if prefix[LiteralNode].value.byte_length() > 0:
+        return prefix_index
     return -1
 
 
@@ -589,12 +581,11 @@ def _all_prefixed_sequence_options[
         comptime prefix_index = _sequence_prefix_literal_index[
             nodes, alternation.options[i]
         ]()
-        comptime if prefix_index < 0:
+        comptime __guard prefix_index >= 0 else:
             return False
-        else:
-            comptime prefix = nodes[prefix_index][LiteralNode]
-            comptime if prefix.value.byte_length() < minimum:
-                return False
+        comptime prefix = nodes[prefix_index][LiteralNode]
+        comptime if prefix.value.byte_length() < minimum:
+            return False
     return alternation.count > 0
 
 
@@ -603,88 +594,84 @@ def _is_bounded_line_gap_option[
 ]() -> Bool:
     """Recognize `literal(?:\\s*.+\\s*){0,n}literal`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count != 3:
-            return False
-        comptime prefix = nodes[sequence.items[0]]
-        comptime gap_node = nodes[sequence.items[1]]
-        comptime suffix = nodes[sequence.items[2]]
-        comptime if (
-            not prefix.isa[LiteralNode]()
-            or prefix[LiteralNode].value.byte_length() == 0
-            or not suffix.isa[LiteralNode]()
-            or suffix[LiteralNode].value.byte_length() == 0
-        ):
-            return False
-        comptime if gap_node.isa[RepeatNode]():
-            comptime gap = gap_node[RepeatNode]
-            comptime if (
-                gap.minimum != 0 or gap.maximum <= 0 or not gap.greedy
-            ):
-                return False
-            comptime child = nodes[gap.child]
-            comptime if child.isa[SequenceNode]():
-                comptime middle = child[SequenceNode]
-                comptime if middle.count != 3:
-                    return False
-                comptime leading_node = nodes[middle.items[0]]
-                comptime dot_node = nodes[middle.items[1]]
-                comptime trailing_node = nodes[middle.items[2]]
-                comptime if (
-                    not leading_node.isa[RepeatNode]()
-                    or not dot_node.isa[RepeatNode]()
-                    or not trailing_node.isa[RepeatNode]()
-                ):
-                    return False
-                comptime leading = leading_node[RepeatNode]
-                comptime dot = dot_node[RepeatNode]
-                comptime trailing = trailing_node[RepeatNode]
-                comptime if (
-                    leading.minimum != 0
-                    or leading.maximum != -1
-                    or not leading.greedy
-                    or dot.minimum != 1
-                    or dot.maximum != -1
-                    or not dot.greedy
-                    or trailing.minimum != 0
-                    or trailing.maximum != -1
-                    or not trailing.greedy
-                ):
-                    return False
-                comptime leading_child = nodes[leading.child]
-                comptime dot_child = nodes[dot.child]
-                comptime trailing_child = nodes[trailing.child]
-                return (
-                    leading_child.isa[CharClassNode]()
-                    and leading_child[CharClassNode].kind
-                    == CHAR_ASCII_WHITESPACE
-                    and dot_child.isa[CharClassNode]()
-                    and dot_child[CharClassNode].kind == CHAR_BYTE_DOT
-                    and trailing_child.isa[CharClassNode]()
-                    and trailing_child[CharClassNode].kind
-                    == CHAR_ASCII_WHITESPACE
-                )
-            return False
+    comptime __guard node.isa[SequenceNode]() else:
         return False
-    return False
+    comptime sequence = node[SequenceNode]
+    comptime if sequence.count != 3:
+        return False
+    comptime prefix = nodes[sequence.items[0]]
+    comptime gap_node = nodes[sequence.items[1]]
+    comptime suffix = nodes[sequence.items[2]]
+    comptime if (
+        not prefix.isa[LiteralNode]()
+        or prefix[LiteralNode].value.byte_length() == 0
+        or not suffix.isa[LiteralNode]()
+        or suffix[LiteralNode].value.byte_length() == 0
+    ):
+        return False
+    comptime __guard gap_node.isa[RepeatNode]() else:
+        return False
+    comptime gap = gap_node[RepeatNode]
+    comptime if (gap.minimum != 0 or gap.maximum <= 0 or not gap.greedy):
+        return False
+    comptime child = nodes[gap.child]
+    comptime __guard child.isa[SequenceNode]() else:
+        return False
+    comptime middle = child[SequenceNode]
+    comptime if middle.count != 3:
+        return False
+    comptime leading_node = nodes[middle.items[0]]
+    comptime dot_node = nodes[middle.items[1]]
+    comptime trailing_node = nodes[middle.items[2]]
+    comptime if (
+        not leading_node.isa[RepeatNode]()
+        or not dot_node.isa[RepeatNode]()
+        or not trailing_node.isa[RepeatNode]()
+    ):
+        return False
+    comptime leading = leading_node[RepeatNode]
+    comptime dot = dot_node[RepeatNode]
+    comptime trailing = trailing_node[RepeatNode]
+    comptime if (
+        leading.minimum != 0
+        or leading.maximum != -1
+        or not leading.greedy
+        or dot.minimum != 1
+        or dot.maximum != -1
+        or not dot.greedy
+        or trailing.minimum != 0
+        or trailing.maximum != -1
+        or not trailing.greedy
+    ):
+        return False
+    comptime leading_child = nodes[leading.child]
+    comptime dot_child = nodes[dot.child]
+    comptime trailing_child = nodes[trailing.child]
+    return (
+        leading_child.isa[CharClassNode]()
+        and leading_child[CharClassNode].kind == CHAR_ASCII_WHITESPACE
+        and dot_child.isa[CharClassNode]()
+        and dot_child[CharClassNode].kind == CHAR_BYTE_DOT
+        and trailing_child.isa[CharClassNode]()
+        and trailing_child[CharClassNode].kind == CHAR_ASCII_WHITESPACE
+    )
 
 
 def _is_bounded_line_gap_literal_alternation[
     nodes: List[RegexNode], node_index: Int
 ]() -> Bool:
     comptime node = nodes[node_index]
-    comptime if node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count == 0:
+    comptime __guard node.isa[OrNode]() else:
+        return False
+    comptime alternation = node[OrNode]
+    comptime if alternation.count == 0:
+        return False
+    comptime for option in range(alternation.count):
+        comptime if not _is_bounded_line_gap_option[
+            nodes, alternation.options[option]
+        ]():
             return False
-        comptime for option in range(alternation.count):
-            comptime if not _is_bounded_line_gap_option[
-                nodes, alternation.options[option]
-            ]():
-                return False
-        return True
-    return False
+    return True
 
 
 def _multiline_literal_edge_index[
@@ -692,66 +679,61 @@ def _multiline_literal_edge_index[
 ]() -> Int:
     """Return the shared literal in `(?m)^literal|literal$`, or -1."""
     comptime node = nodes[node_index]
-    comptime if node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count == 2:
-            comptime first_node = nodes[alternation.options[0]]
-            comptime second_node = nodes[alternation.options[1]]
+    comptime __guard node.isa[OrNode]() else:
+        return -1
+    comptime alternation = node[OrNode]
+    comptime __guard alternation.count == 2 else:
+        return -1
+    comptime first_node = nodes[alternation.options[0]]
+    comptime second_node = nodes[alternation.options[1]]
+    comptime __guard (
+        first_node.isa[SequenceNode]() and second_node.isa[SequenceNode]()
+    ) else:
+        return -1
+    comptime first = first_node[SequenceNode]
+    comptime second = second_node[SequenceNode]
+    comptime __guard second.count == 2 else:
+        return -1
+    comptime second_literal = nodes[second.items[0]]
+    comptime second_anchor = nodes[second.items[1]]
+    comptime __guard (
+        second_literal.isa[LiteralNode]() and second_anchor.isa[ZeroWidthNode]()
+    ) else:
+        return -1
+    comptime if (second_anchor[ZeroWidthNode].kind != ASSERT_LINE_END):
+        return -1
+    comptime if first.count == 2:
+        comptime first_anchor = nodes[first.items[0]]
+        comptime first_literal = nodes[first.items[1]]
+        comptime if (
+            first_anchor.isa[ZeroWidthNode]()
+            and first_literal.isa[LiteralNode]()
+        ):
             comptime if (
-                first_node.isa[SequenceNode]()
-                and second_node.isa[SequenceNode]()
+                first_anchor[ZeroWidthNode].kind == ASSERT_LINE_START
+                and first_literal[LiteralNode].value
+                == second_literal[LiteralNode].value
+                and first_literal[LiteralNode].value.byte_length() > 0
             ):
-                comptime first = first_node[SequenceNode]
-                comptime second = second_node[SequenceNode]
-                comptime if second.count == 2:
-                    comptime second_literal = nodes[second.items[0]]
-                    comptime second_anchor = nodes[second.items[1]]
-                    comptime if (
-                        second_literal.isa[LiteralNode]()
-                        and second_anchor.isa[ZeroWidthNode]()
-                    ):
-                        comptime if (
-                            second_anchor[ZeroWidthNode].kind != ASSERT_LINE_END
-                        ):
-                            return -1
-                        comptime if first.count == 2:
-                            comptime first_anchor = nodes[first.items[0]]
-                            comptime first_literal = nodes[first.items[1]]
-                            comptime if (
-                                first_anchor.isa[ZeroWidthNode]()
-                                and first_literal.isa[LiteralNode]()
-                            ):
-                                comptime if (
-                                    first_anchor[ZeroWidthNode].kind
-                                    == ASSERT_LINE_START
-                                    and first_literal[LiteralNode].value
-                                    == second_literal[LiteralNode].value
-                                    and first_literal[
-                                        LiteralNode
-                                    ].value.byte_length()
-                                    > 0
-                                ):
-                                    return first.items[1]
-                        comptime if first.count == 3:
-                            comptime empty = nodes[first.items[0]]
-                            comptime first_anchor = nodes[first.items[1]]
-                            comptime first_literal = nodes[first.items[2]]
-                            comptime if (
-                                empty.isa[EmptyNode]()
-                                and first_anchor.isa[ZeroWidthNode]()
-                                and first_literal.isa[LiteralNode]()
-                            ):
-                                comptime if (
-                                    first_anchor[ZeroWidthNode].kind
-                                    == ASSERT_LINE_START
-                                    and first_literal[LiteralNode].value
-                                    == second_literal[LiteralNode].value
-                                    and first_literal[
-                                        LiteralNode
-                                    ].value.byte_length()
-                                    > 0
-                                ):
-                                    return first.items[2]
+                return first.items[1]
+    comptime __guard first.count == 3 else:
+        return -1
+    comptime empty = nodes[first.items[0]]
+    comptime first_anchor = nodes[first.items[1]]
+    comptime first_literal = nodes[first.items[2]]
+    comptime __guard (
+        empty.isa[EmptyNode]()
+        and first_anchor.isa[ZeroWidthNode]()
+        and first_literal.isa[LiteralNode]()
+    ) else:
+        return -1
+    comptime if (
+        first_anchor[ZeroWidthNode].kind == ASSERT_LINE_START
+        and first_literal[LiteralNode].value
+        == second_literal[LiteralNode].value
+        and first_literal[LiteralNode].value.byte_length() > 0
+    ):
+        return first.items[2]
     return -1
 
 
@@ -766,19 +748,21 @@ def _is_bounded_prefix_literal_alternation[
 ]() -> Bool:
     """Recognize `one-byte-class{m,n} (literal|...)`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime prefix = nodes[sequence.items[0]]
-            comptime suffix = nodes[sequence.items[1]]
-            comptime if prefix.isa[RepeatNode]() and suffix.isa[OrNode]():
-                comptime repeat = prefix[RepeatNode]
-                return (
-                    repeat.maximum >= 0
-                    and _is_one_byte_class_node[nodes, repeat.child]()
-                    and _all_literal_options[nodes, suffix[OrNode]]()
-                )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime prefix = nodes[sequence.items[0]]
+    comptime suffix = nodes[sequence.items[1]]
+    comptime __guard prefix.isa[RepeatNode]() and suffix.isa[OrNode]() else:
+        return False
+    comptime repeat = prefix[RepeatNode]
+    return (
+        repeat.maximum >= 0
+        and _is_one_byte_class_node[nodes, repeat.child]()
+        and _all_literal_options[nodes, suffix[OrNode]]()
+    )
 
 
 def _is_class_literal_alternation_with_suffix[
@@ -786,35 +770,33 @@ def _is_class_literal_alternation_with_suffix[
 ]() -> Bool:
     """Recognize `([class]literal|...) [class]`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime prefix = nodes[sequence.items[0]]
-            comptime if prefix.isa[OrNode]():
-                comptime alternation = prefix[OrNode]
-                comptime for i in range(alternation.count):
-                    comptime option = nodes[alternation.options[i]]
-                    comptime if not option.isa[SequenceNode]():
-                        return False
-                    else:
-                        comptime option_sequence = option[SequenceNode]
-                        comptime if option_sequence.count != 2:
-                            return False
-                        else:
-                            comptime literal = nodes[option_sequence.items[1]]
-                            comptime if (
-                                not _is_one_byte_class_node[
-                                    nodes, option_sequence.items[0]
-                                ]()
-                                or not literal.isa[LiteralNode]()
-                                or literal[LiteralNode].value.byte_length() == 0
-                            ):
-                                return False
-                return (
-                    alternation.count > 0
-                    and _is_one_byte_class_node[nodes, sequence.items[1]]()
-                )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime prefix = nodes[sequence.items[0]]
+    comptime __guard prefix.isa[OrNode]() else:
+        return False
+    comptime alternation = prefix[OrNode]
+    comptime for i in range(alternation.count):
+        comptime option = nodes[alternation.options[i]]
+        comptime __guard option.isa[SequenceNode]() else:
+            return False
+        comptime option_sequence = option[SequenceNode]
+        comptime __guard option_sequence.count == 2 else:
+            return False
+        comptime literal = nodes[option_sequence.items[1]]
+        comptime if (
+            not _is_one_byte_class_node[nodes, option_sequence.items[0]]()
+            or not literal.isa[LiteralNode]()
+            or literal[LiteralNode].value.byte_length() == 0
+        ):
+            return False
+    return (
+        alternation.count > 0
+        and _is_one_byte_class_node[nodes, sequence.items[1]]()
+    )
 
 
 def _is_one_byte_class_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
@@ -831,9 +813,10 @@ def _nodes_are_disjoint[
     nodes: List[RegexNode], left_index: Int, right_index: Int
 ]() -> Bool:
     comptime for value in range(256):
-        comptime if _one_byte_atom_accepts[nodes, left_index](value):
-            comptime if _one_byte_atom_accepts[nodes, right_index](value):
-                return False
+        comptime __guard _one_byte_atom_accepts[nodes, left_index](value) else:
+            continue
+        comptime if _one_byte_atom_accepts[nodes, right_index](value):
+            return False
     return True
 
 
@@ -842,36 +825,37 @@ def _is_symmetric_bounded_delimited_sequence[
 ]() -> Bool:
     """Recognize `D [^D]{m,n} C D` where `C` and `D` are disjoint."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 4:
-            comptime prefix_node = nodes[sequence.items[0]]
-            comptime repeat_node = nodes[sequence.items[1]]
-            comptime suffix_node = nodes[sequence.items[3]]
-            comptime if (
-                prefix_node.isa[BracketClassNode]()
-                and repeat_node.isa[RepeatNode]()
-                and suffix_node.isa[BracketClassNode]()
-            ):
-                comptime prefix = prefix_node[BracketClassNode]
-                comptime repeat = repeat_node[RepeatNode]
-                comptime repeat_child_node = nodes[repeat.child]
-                comptime suffix = suffix_node[BracketClassNode]
-                comptime if repeat_child_node.isa[BracketClassNode]():
-                    comptime repeat_child = repeat_child_node[BracketClassNode]
-                    return (
-                        not prefix.negated
-                        and repeat_child.negated
-                        and not suffix.negated
-                        and repeat.maximum >= 0
-                        and _same_bracket_ranges(prefix, repeat_child)
-                        and _same_bracket_ranges(prefix, suffix)
-                        and _is_one_byte_class_node[nodes, sequence.items[2]]()
-                        and _nodes_are_disjoint[
-                            nodes, sequence.items[0], sequence.items[2]
-                        ]()
-                    )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 4 else:
+        return False
+    comptime prefix_node = nodes[sequence.items[0]]
+    comptime repeat_node = nodes[sequence.items[1]]
+    comptime suffix_node = nodes[sequence.items[3]]
+    comptime __guard (
+        prefix_node.isa[BracketClassNode]()
+        and repeat_node.isa[RepeatNode]()
+        and suffix_node.isa[BracketClassNode]()
+    ) else:
+        return False
+    comptime prefix = prefix_node[BracketClassNode]
+    comptime repeat = repeat_node[RepeatNode]
+    comptime repeat_child_node = nodes[repeat.child]
+    comptime suffix = suffix_node[BracketClassNode]
+    comptime __guard repeat_child_node.isa[BracketClassNode]() else:
+        return False
+    comptime repeat_child = repeat_child_node[BracketClassNode]
+    return (
+        not prefix.negated
+        and repeat_child.negated
+        and not suffix.negated
+        and repeat.maximum >= 0
+        and _same_bracket_ranges(prefix, repeat_child)
+        and _same_bracket_ranges(prefix, suffix)
+        and _is_one_byte_class_node[nodes, sequence.items[2]]()
+        and _nodes_are_disjoint[nodes, sequence.items[0], sequence.items[2]]()
+    )
 
 
 def _is_exact_bracket_range[
@@ -898,54 +882,51 @@ def _is_bounded_capitalized_word_sequence[
 ]() -> Bool:
     """Recognize `(?:[A-Z][a-z]+\\s*){m,n}`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[RepeatNode]():
-        comptime outer = node[RepeatNode]
-        comptime child_node = nodes[outer.child]
-        comptime if (
-            outer.minimum > 0
-            and outer.maximum >= outer.minimum
-            and outer.greedy
-            and child_node.isa[SequenceNode]()
-        ):
-            comptime child = child_node[SequenceNode]
-            comptime if child.count == 3:
-                comptime uppercase_node = nodes[child.items[0]]
-                comptime lowercase_repeat_node = nodes[child.items[1]]
-                comptime whitespace_repeat_node = nodes[child.items[2]]
-                comptime if (
-                    uppercase_node.isa[BracketClassNode]()
-                    and lowercase_repeat_node.isa[RepeatNode]()
-                    and whitespace_repeat_node.isa[RepeatNode]()
-                ):
-                    comptime uppercase = uppercase_node[BracketClassNode]
-                    comptime lowercase_repeat = lowercase_repeat_node[
-                        RepeatNode
-                    ]
-                    comptime whitespace_repeat = whitespace_repeat_node[
-                        RepeatNode
-                    ]
-                    comptime lowercase_node = nodes[lowercase_repeat.child]
-                    comptime whitespace_node = nodes[whitespace_repeat.child]
-                    comptime if (
-                        lowercase_node.isa[BracketClassNode]()
-                        and whitespace_node.isa[CharClassNode]()
-                    ):
-                        return Bool(
-                            _is_exact_bracket_range[uppercase](
-                                ord("A"), ord("Z")
-                            )
-                            and _is_exact_bracket_range[
-                                lowercase_node[BracketClassNode]
-                            ](ord("a"), ord("z"))
-                            and lowercase_repeat.minimum == 1
-                            and lowercase_repeat.maximum == -1
-                            and lowercase_repeat.greedy
-                            and whitespace_repeat.minimum == 0
-                            and whitespace_repeat.maximum == -1
-                            and whitespace_repeat.greedy
-                            and whitespace_node[CharClassNode].kind
-                            == CHAR_ASCII_WHITESPACE
-                        )
+    comptime __guard node.isa[RepeatNode]() else:
+        return False
+    comptime outer = node[RepeatNode]
+    comptime child_node = nodes[outer.child]
+    comptime __guard (
+        outer.minimum > 0
+        and outer.maximum >= outer.minimum
+        and outer.greedy
+        and child_node.isa[SequenceNode]()
+    ) else:
+        return False
+    comptime child = child_node[SequenceNode]
+    comptime __guard child.count == 3 else:
+        return False
+    comptime uppercase_node = nodes[child.items[0]]
+    comptime lowercase_repeat_node = nodes[child.items[1]]
+    comptime whitespace_repeat_node = nodes[child.items[2]]
+    comptime __guard (
+        uppercase_node.isa[BracketClassNode]()
+        and lowercase_repeat_node.isa[RepeatNode]()
+        and whitespace_repeat_node.isa[RepeatNode]()
+    ) else:
+        return False
+    comptime uppercase = uppercase_node[BracketClassNode]
+    comptime lowercase_repeat = lowercase_repeat_node[RepeatNode]
+    comptime whitespace_repeat = whitespace_repeat_node[RepeatNode]
+    comptime lowercase_node = nodes[lowercase_repeat.child]
+    comptime whitespace_node = nodes[whitespace_repeat.child]
+    comptime if (
+        lowercase_node.isa[BracketClassNode]()
+        and whitespace_node.isa[CharClassNode]()
+    ):
+        return Bool(
+            _is_exact_bracket_range[uppercase](ord("A"), ord("Z"))
+            and _is_exact_bracket_range[lowercase_node[BracketClassNode]](
+                ord("a"), ord("z")
+            )
+            and lowercase_repeat.minimum == 1
+            and lowercase_repeat.maximum == -1
+            and lowercase_repeat.greedy
+            and whitespace_repeat.minimum == 0
+            and whitespace_repeat.maximum == -1
+            and whitespace_repeat.greedy
+            and whitespace_node[CharClassNode].kind == CHAR_ASCII_WHITESPACE
+        )
     return False
 
 
@@ -954,37 +935,39 @@ def _is_nested_run_then_disjoint_class[
 ]() -> Bool:
     """Recognize `(byte_atom+)*class` with disjoint byte predicates."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime outer_node = nodes[sequence.items[0]]
-            comptime if outer_node.isa[RepeatNode]():
-                comptime outer = outer_node[RepeatNode]
-                comptime inner_node = nodes[outer.child]
-                comptime if inner_node.isa[RepeatNode]():
-                    comptime inner = inner_node[RepeatNode]
-                    comptime if not (
-                        outer.minimum == 0
-                        and outer.maximum == -1
-                        and outer.greedy
-                        and inner.minimum == 1
-                        and inner.maximum == -1
-                        and inner.greedy
-                        and _is_one_byte_class_node[nodes, sequence.items[1]]()
-                    ):
-                        return False
-                    comptime atom = nodes[inner.child]
-                    comptime if atom.isa[LiteralNode]():
-                        comptime literal = atom[LiteralNode]
-                        comptime if literal.value.byte_length() == 1:
-                            return not _one_byte_atom_accepts[
-                                nodes, sequence.items[1]
-                            ](Int(literal.value.as_bytes()[0]))
-                        return False
-                    comptime if _is_one_byte_class_node[nodes, inner.child]():
-                        return _nodes_are_disjoint[
-                            nodes, inner.child, sequence.items[1]
-                        ]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime outer_node = nodes[sequence.items[0]]
+    comptime __guard outer_node.isa[RepeatNode]() else:
+        return False
+    comptime outer = outer_node[RepeatNode]
+    comptime inner_node = nodes[outer.child]
+    comptime __guard inner_node.isa[RepeatNode]() else:
+        return False
+    comptime inner = inner_node[RepeatNode]
+    comptime if not (
+        outer.minimum == 0
+        and outer.maximum == -1
+        and outer.greedy
+        and inner.minimum == 1
+        and inner.maximum == -1
+        and inner.greedy
+        and _is_one_byte_class_node[nodes, sequence.items[1]]()
+    ):
+        return False
+    comptime atom = nodes[inner.child]
+    comptime if atom.isa[LiteralNode]():
+        comptime literal = atom[LiteralNode]
+        comptime if literal.value.byte_length() == 1:
+            return not _one_byte_atom_accepts[nodes, sequence.items[1]](
+                Int(literal.value.as_bytes()[0])
+            )
+        return False
+    comptime if _is_one_byte_class_node[nodes, inner.child]():
+        return _nodes_are_disjoint[nodes, inner.child, sequence.items[1]]()
     return False
 
 
@@ -1005,97 +988,91 @@ def _is_start_assertion_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
 def _simple_infix_literal_item_from[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int, found: Int
 ]() -> Int:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return found
-    else:
-        comptime node_index = sequence.items[item]
-        comptime node = nodes[node_index]
-        comptime if node.isa[LiteralNode]():
-            comptime if node[LiteralNode].value.byte_length() == 0:
-                return -1
-            comptime if found < 0 or (
-                node[LiteralNode].value.byte_length()
-                > nodes[sequence.items[found]][LiteralNode].value.byte_length()
-            ):
-                return _simple_infix_literal_item_from[
-                    nodes, sequence, item + 1, item
-                ]()
-            return _simple_infix_literal_item_from[
-                nodes, sequence, item + 1, found
-            ]()
-        elif node.isa[RepeatNode]():
-            comptime if not _is_one_byte_class_node[
-                nodes, node[RepeatNode].child
-            ]():
-                return -1
-            comptime repeat_child = nodes[node[RepeatNode].child]
-            comptime if repeat_child.isa[CharClassNode]():
-                comptime if repeat_child[CharClassNode].kind == CHAR_BYTE_DOT:
-                    return -1
-        elif not (
-            node.isa[EmptyNode]()
-            or node.isa[ZeroWidthNode]()
-            or _is_one_byte_class_node[nodes, node_index]()
-        ):
+    comptime node_index = sequence.items[item]
+    comptime node = nodes[node_index]
+    comptime if node.isa[LiteralNode]():
+        comptime if node[LiteralNode].value.byte_length() == 0:
             return -1
+        comptime if found < 0 or (
+            node[LiteralNode].value.byte_length()
+            > nodes[sequence.items[found]][LiteralNode].value.byte_length()
+        ):
+            return _simple_infix_literal_item_from[
+                nodes, sequence, item + 1, item
+            ]()
         return _simple_infix_literal_item_from[
             nodes, sequence, item + 1, found
         ]()
+    elif node.isa[RepeatNode]():
+        comptime if not _is_one_byte_class_node[
+            nodes, node[RepeatNode].child
+        ]():
+            return -1
+        comptime repeat_child = nodes[node[RepeatNode].child]
+        comptime if repeat_child.isa[CharClassNode]():
+            comptime if repeat_child[CharClassNode].kind == CHAR_BYTE_DOT:
+                return -1
+    elif not (
+        node.isa[EmptyNode]()
+        or node.isa[ZeroWidthNode]()
+        or _is_one_byte_class_node[nodes, node_index]()
+    ):
+        return -1
+    return _simple_infix_literal_item_from[nodes, sequence, item + 1, found]()
 
 
 def _simple_infix_literal_item_for_root[
     nodes: List[RegexNode], node_index: Int
 ]() -> Int:
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime item = _simple_infix_literal_item_from[
-            nodes, sequence, 0, -1
-        ]()
-        comptime if item < 0:
-            return -1
-        # If a greedy prefix accepts the literal's first byte and nothing
-        # follows the literal, the regex must choose the last viable literal
-        # in that run. A first-candidate prefilter would change the span.
-        comptime if item == sequence.count - 1 and item > 0:
-            comptime previous = nodes[sequence.items[item - 1]]
-            comptime if previous.isa[RepeatNode]():
-                comptime repeat = previous[RepeatNode]
-                comptime literal = nodes[sequence.items[item]][LiteralNode]
-                comptime first = Int(literal.value.as_bytes()[0])
-                comptime if _one_byte_atom_accepts[nodes, repeat.child](first):
-                    return -1
-        return item
-    return -1
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = node[SequenceNode]
+    comptime item = _simple_infix_literal_item_from[nodes, sequence, 0, -1]()
+    comptime if item < 0:
+        return -1
+    # If a greedy prefix accepts the literal's first byte and nothing
+    # follows the literal, the regex must choose the last viable literal
+    # in that run. A first-candidate prefilter would change the span.
+    comptime if item == sequence.count - 1 and item > 0:
+        comptime previous = nodes[sequence.items[item - 1]]
+        comptime if previous.isa[RepeatNode]():
+            comptime repeat = previous[RepeatNode]
+            comptime literal = nodes[sequence.items[item]][LiteralNode]
+            comptime first = Int(literal.value.as_bytes()[0])
+            comptime if _one_byte_atom_accepts[nodes, repeat.child](first):
+                return -1
+    return item
 
 
 def _simple_class_anchor_item_from[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int, best: Int
 ]() -> Int:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return best
-    else:
-        comptime node_index = sequence.items[item]
-        comptime node = nodes[node_index]
-        comptime if _is_one_byte_class_node[nodes, node_index]():
-            comptime if best < 0 or (
-                _one_byte_node_coverage[nodes, node_index]()
-                < _one_byte_node_coverage[nodes, sequence.items[best]]()
-            ):
-                return _simple_class_anchor_item_from[
-                    nodes, sequence, item + 1, item
-                ]()
-        elif node.isa[RepeatNode]():
-            comptime if not _is_one_byte_class_node[
-                nodes, node[RepeatNode].child
-            ]():
-                return -1
-        elif node.isa[LiteralNode]():
-            comptime if node[LiteralNode].value.byte_length() == 0:
-                return -1
-        elif not (node.isa[EmptyNode]() or node.isa[ZeroWidthNode]()):
+    comptime node_index = sequence.items[item]
+    comptime node = nodes[node_index]
+    comptime if _is_one_byte_class_node[nodes, node_index]():
+        comptime if best < 0 or (
+            _one_byte_node_coverage[nodes, node_index]()
+            < _one_byte_node_coverage[nodes, sequence.items[best]]()
+        ):
+            return _simple_class_anchor_item_from[
+                nodes, sequence, item + 1, item
+            ]()
+    elif node.isa[RepeatNode]():
+        comptime if not _is_one_byte_class_node[
+            nodes, node[RepeatNode].child
+        ]():
             return -1
-        return _simple_class_anchor_item_from[nodes, sequence, item + 1, best]()
+    elif node.isa[LiteralNode]():
+        comptime if node[LiteralNode].value.byte_length() == 0:
+            return -1
+    elif not (node.isa[EmptyNode]() or node.isa[ZeroWidthNode]()):
+        return -1
+    return _simple_class_anchor_item_from[nodes, sequence, item + 1, best]()
 
 
 def _simple_class_anchor_item_for_root[
@@ -1115,29 +1092,31 @@ def _leading_repeat_literal_item[
 ]() -> Int:
     """Return the mandatory literal after a leading one-byte repeat."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count >= 2:
-            comptime repeat_node = nodes[sequence.items[0]]
-            comptime literal_node = nodes[sequence.items[1]]
-            comptime if (
-                repeat_node.isa[RepeatNode]()
-                and literal_node.isa[LiteralNode]()
-            ):
-                comptime repeat = repeat_node[RepeatNode]
-                comptime literal = literal_node[LiteralNode]
-                comptime if (
-                    repeat.minimum > 0
-                    and _is_one_byte_class_node[nodes, repeat.child]()
-                    and literal.value.byte_length() > 0
-                    and (
-                        not require_disjoint
-                        or not _literal_bytes_all_accepted_by_node[
-                            nodes, repeat.child, literal.value, 0
-                        ]()
-                    )
-                ):
-                    return 1
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count >= 2 else:
+        return -1
+    comptime repeat_node = nodes[sequence.items[0]]
+    comptime literal_node = nodes[sequence.items[1]]
+    comptime __guard (
+        repeat_node.isa[RepeatNode]() and literal_node.isa[LiteralNode]()
+    ) else:
+        return -1
+    comptime repeat = repeat_node[RepeatNode]
+    comptime literal = literal_node[LiteralNode]
+    comptime if (
+        repeat.minimum > 0
+        and _is_one_byte_class_node[nodes, repeat.child]()
+        and literal.value.byte_length() > 0
+        and (
+            not require_disjoint
+            or not _literal_bytes_all_accepted_by_node[
+                nodes, repeat.child, literal.value, 0
+            ]()
+        )
+    ):
+        return 1
     return -1
 
 
@@ -1145,16 +1124,15 @@ def _literal_bytes_all_accepted_by_node[
     nodes: List[RegexNode], node_index: Int, literal: String, position: Int
 ]() -> Bool:
     """Return whether every literal byte belongs to one byte predicate."""
-    comptime if position == literal.byte_length():
+    comptime __guard position != literal.byte_length() else:
         return True
-    else:
-        comptime if not _one_byte_atom_accepts[nodes, node_index](
-            Int(literal.as_bytes()[position])
-        ):
-            return False
-        return _literal_bytes_all_accepted_by_node[
-            nodes, node_index, literal, position + 1
-        ]()
+    comptime if not _one_byte_atom_accepts[nodes, node_index](
+        Int(literal.as_bytes()[position])
+    ):
+        return False
+    return _literal_bytes_all_accepted_by_node[
+        nodes, node_index, literal, position + 1
+    ]()
 
 
 def _is_reverse_suffix_class_sequence[
@@ -1162,21 +1140,25 @@ def _is_reverse_suffix_class_sequence[
 ]() -> Bool:
     """Recognize `one-byte literal class* one-byte` sequences."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 4:
-            comptime middle = nodes[sequence.items[2]]
-            comptime literal = nodes[sequence.items[1]]
-            comptime if middle.isa[RepeatNode]() and literal.isa[LiteralNode]():
-                comptime repeat = middle[RepeatNode]
-                return (
-                    repeat.maximum == -1
-                    and _is_one_byte_class_node[nodes, sequence.items[0]]()
-                    and _is_one_byte_class_node[nodes, repeat.child]()
-                    and _is_one_byte_class_node[nodes, sequence.items[3]]()
-                    and literal[LiteralNode].value.byte_length() > 0
-                )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 4 else:
+        return False
+    comptime middle = nodes[sequence.items[2]]
+    comptime literal = nodes[sequence.items[1]]
+    comptime __guard middle.isa[RepeatNode]() and literal.isa[
+        LiteralNode
+    ]() else:
+        return False
+    comptime repeat = middle[RepeatNode]
+    return (
+        repeat.maximum == -1
+        and _is_one_byte_class_node[nodes, sequence.items[0]]()
+        and _is_one_byte_class_node[nodes, repeat.child]()
+        and _is_one_byte_class_node[nodes, sequence.items[3]]()
+        and literal[LiteralNode].value.byte_length() > 0
+    )
 
 
 def _unbounded_char_repeat_kind[
@@ -1184,12 +1166,14 @@ def _unbounded_char_repeat_kind[
 ]() -> Int:
     """Return the repeated character-class kind, or -1."""
     comptime node = nodes[node_index]
-    comptime if node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        comptime if repeat.minimum == minimum and repeat.maximum == -1:
-            comptime child = nodes[repeat.child]
-            comptime if child.isa[CharClassNode]():
-                return child[CharClassNode].kind
+    comptime __guard node.isa[RepeatNode]() else:
+        return -1
+    comptime repeat = node[RepeatNode]
+    comptime __guard repeat.minimum == minimum and repeat.maximum == -1 else:
+        return -1
+    comptime child = nodes[repeat.child]
+    comptime if child.isa[CharClassNode]():
+        return child[CharClassNode].kind
     return -1
 
 
@@ -1209,11 +1193,13 @@ def _is_whole_input_dotall_star[
     comptime if _is_zero_or_more_dotall[nodes, node_index]():
         return True
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime if nodes[sequence.items[0]].isa[EmptyNode]():
-                return _is_zero_or_more_dotall[nodes, sequence.items[1]]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime if nodes[sequence.items[0]].isa[EmptyNode]():
+        return _is_zero_or_more_dotall[nodes, sequence.items[1]]()
     return False
 
 
@@ -1225,11 +1211,13 @@ def _unicode_dot_kind[nodes: List[RegexNode], node_index: Int]() -> Int:
         comptime if kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL:
             return kind
         return -1
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime if nodes[sequence.items[0]].isa[EmptyNode]():
-                return _unicode_dot_kind[nodes, sequence.items[1]]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return -1
+    comptime if nodes[sequence.items[0]].isa[EmptyNode]():
+        return _unicode_dot_kind[nodes, sequence.items[1]]()
     return -1
 
 
@@ -1238,11 +1226,13 @@ def _is_unicode_dotall_plus[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime kind = _unbounded_char_repeat_kind[nodes, node_index, 1]()
     comptime if kind >= 0:
         return kind == CHAR_UNICODE_DOTALL
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 2:
-            comptime if nodes[sequence.items[0]].isa[EmptyNode]():
-                return _is_unicode_dotall_plus[nodes, sequence.items[1]]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime if nodes[sequence.items[0]].isa[EmptyNode]():
+        return _is_unicode_dotall_plus[nodes, sequence.items[1]]()
     return False
 
 
@@ -1262,9 +1252,10 @@ def _count_unicode_dot[
         if evl == width:
             values = pointer.unsafe_load[width=width, alignment=1](offset)
         else:
-            values = _masked_load_bytes[width](
+            values = masked_load[width, alignment=1](
                 pointer.unsafe_offset(offset),
                 active,
+                SIMD[.uint8, width](0),
             )
         comptime if sum_spans:
             comptime if exclude_newline:
@@ -1295,34 +1286,37 @@ def _is_multiline_whole_line_sequence[
     comptime start = nodes[sequence.items[offset]]
     comptime repeat_node = nodes[sequence.items[offset + 1]]
     comptime end = nodes[sequence.items[offset + 2]]
-    comptime if (
+    comptime __guard (
         start.isa[ZeroWidthNode]()
         and repeat_node.isa[RepeatNode]()
         and end.isa[ZeroWidthNode]()
-    ):
-        comptime repeat = repeat_node[RepeatNode]
-        comptime child = nodes[repeat.child]
-        comptime if child.isa[CharClassNode]():
-            return Bool(
-                start[ZeroWidthNode].kind == ASSERT_LINE_START
-                and repeat.minimum == 0
-                and repeat.maximum == -1
-                and child[CharClassNode].kind == CHAR_BYTE_DOT
-                and end[ZeroWidthNode].kind == ASSERT_LINE_END
-            )
+    ) else:
+        return False
+    comptime repeat = repeat_node[RepeatNode]
+    comptime child = nodes[repeat.child]
+    comptime if child.isa[CharClassNode]():
+        return Bool(
+            start[ZeroWidthNode].kind == ASSERT_LINE_START
+            and repeat.minimum == 0
+            and repeat.maximum == -1
+            and child[CharClassNode].kind == CHAR_BYTE_DOT
+            and end[ZeroWidthNode].kind == ASSERT_LINE_END
+        )
     return False
 
 
 def _is_multiline_whole_line[nodes: List[RegexNode], node_index: Int]() -> Bool:
     """Recognize `(?m)^.*$`, whose search result is always true."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 3:
-            return _is_multiline_whole_line_sequence[nodes, sequence, 0]()
-        comptime if sequence.count == 4:
-            comptime if nodes[sequence.items[0]].isa[EmptyNode]():
-                return _is_multiline_whole_line_sequence[nodes, sequence, 1]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime if sequence.count == 3:
+        return _is_multiline_whole_line_sequence[nodes, sequence, 0]()
+    comptime __guard sequence.count == 4 else:
+        return False
+    comptime if nodes[sequence.items[0]].isa[EmptyNode]():
+        return _is_multiline_whole_line_sequence[nodes, sequence, 1]()
     return False
 
 
@@ -1334,59 +1328,55 @@ def _is_anchored_prefix_delimited_line_at[
     comptime prefix_node = nodes[sequence.items[1 + offset]]
     comptime body_node = nodes[sequence.items[3 + offset]]
     comptime end = nodes[sequence.items[5 + offset]]
-    comptime if (
-        not start.isa[ZeroWidthNode]()
-        or start[ZeroWidthNode].kind != ASSERT_INPUT_START
-        or not prefix_node.isa[RepeatNode]()
-        or not body_node.isa[RepeatNode]()
-        or not end.isa[ZeroWidthNode]()
-        or end[ZeroWidthNode].kind != ASSERT_INPUT_END
-    ):
+    comptime __guard (
+        start.isa[ZeroWidthNode]()
+        and start[ZeroWidthNode].kind == ASSERT_INPUT_START
+        and prefix_node.isa[RepeatNode]()
+        and body_node.isa[RepeatNode]()
+        and end.isa[ZeroWidthNode]()
+        and end[ZeroWidthNode].kind == ASSERT_INPUT_END
+    ) else:
         return False
-    else:
-        comptime prefix = prefix_node[RepeatNode]
-        comptime body = body_node[RepeatNode]
-        comptime body_child = nodes[body.child]
-        return (
-            prefix.minimum == 0
-            and prefix.maximum < 0
-            and prefix.greedy
-            and _is_one_byte_class_node[nodes, prefix.child]()
-            and _is_one_byte_class_node[nodes, sequence.items[2 + offset]]()
-            and _is_one_byte_class_node[nodes, sequence.items[4 + offset]]()
-            and _nodes_are_disjoint[
-                nodes, prefix.child, sequence.items[2 + offset]
-            ]()
-            and body.minimum == 0
-            and body.maximum < 0
-            and body.greedy
-            and body_child.isa[CharClassNode]()
-            and (
-                body_child[CharClassNode].kind == CHAR_BYTE_DOT
-                or body_child[CharClassNode].kind == CHAR_UNICODE_DOT
-            )
+    comptime prefix = prefix_node[RepeatNode]
+    comptime body = body_node[RepeatNode]
+    comptime body_child = nodes[body.child]
+    return (
+        prefix.minimum == 0
+        and prefix.maximum < 0
+        and prefix.greedy
+        and _is_one_byte_class_node[nodes, prefix.child]()
+        and _is_one_byte_class_node[nodes, sequence.items[2 + offset]]()
+        and _is_one_byte_class_node[nodes, sequence.items[4 + offset]]()
+        and _nodes_are_disjoint[
+            nodes, prefix.child, sequence.items[2 + offset]
+        ]()
+        and body.minimum == 0
+        and body.maximum < 0
+        and body.greedy
+        and body_child.isa[CharClassNode]()
+        and (
+            body_child[CharClassNode].kind == CHAR_BYTE_DOT
+            or body_child[CharClassNode].kind == CHAR_UNICODE_DOT
         )
+    )
 
 
 def _anchored_prefix_delimited_line_offset[
     nodes: List[RegexNode], node_index: Int
 ]() -> Int:
     comptime node = nodes[node_index]
-    comptime if not node.isa[SequenceNode]():
+    comptime __guard node.isa[SequenceNode]() else:
         return -1
-    else:
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 6:
-            return 0 if _is_anchored_prefix_delimited_line_at[
-                nodes, node_index, 0
-            ]() else -1
-        elif (
-            sequence.count == 7 and nodes[sequence.items[1]].isa[EmptyNode]()
-        ):
-            return 1 if _is_anchored_prefix_delimited_line_at[
-                nodes, node_index, 1
-            ]() else -1
-        return -1
+    comptime sequence = node[SequenceNode]
+    comptime if sequence.count == 6:
+        return 0 if _is_anchored_prefix_delimited_line_at[
+            nodes, node_index, 0
+        ]() else -1
+    elif (sequence.count == 7 and nodes[sequence.items[1]].isa[EmptyNode]()):
+        return 1 if _is_anchored_prefix_delimited_line_at[
+            nodes, node_index, 1
+        ]() else -1
+    return -1
 
 
 def _is_anchored_prefix_delimited_line[
@@ -1401,18 +1391,19 @@ def _is_adjacent_dot_stars_around_literal[
 ]() -> Bool:
     """Recognize `.*.*literal.*` for linear line-oriented execution."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 4:
-            comptime literal = nodes[sequence.items[2]]
-            return (
-                _is_zero_or_more_dot[nodes, sequence.items[0]]()
-                and _is_zero_or_more_dot[nodes, sequence.items[1]]()
-                and literal.isa[LiteralNode]()
-                and literal[LiteralNode].value.byte_length() > 0
-                and _is_zero_or_more_dot[nodes, sequence.items[3]]()
-            )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 4 else:
+        return False
+    comptime literal = nodes[sequence.items[2]]
+    return (
+        _is_zero_or_more_dot[nodes, sequence.items[0]]()
+        and _is_zero_or_more_dot[nodes, sequence.items[1]]()
+        and literal.isa[LiteralNode]()
+        and literal[LiteralNode].value.byte_length() > 0
+        and _is_zero_or_more_dot[nodes, sequence.items[3]]()
+    )
 
 
 def _is_greedy_dot_complement_alternation[
@@ -1420,35 +1411,37 @@ def _is_greedy_dot_complement_alternation[
 ]() -> Bool:
     """Recognize greedy `.*[^class]|[class]` byte alternations."""
     comptime node = nodes[node_index]
-    comptime if node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count == 2:
-            comptime first_node = nodes[alternation.options[0]]
-            comptime fallback_node = nodes[alternation.options[1]]
-            comptime if (
-                first_node.isa[SequenceNode]()
-                and fallback_node.isa[BracketClassNode]()
-            ):
-                comptime first = first_node[SequenceNode]
-                comptime fallback = fallback_node[BracketClassNode]
-                comptime if first.count == 2:
-                    comptime repeat_node = nodes[first.items[0]]
-                    comptime terminal_node = nodes[first.items[1]]
-                    comptime if (
-                        repeat_node.isa[RepeatNode]()
-                        and terminal_node.isa[BracketClassNode]()
-                    ):
-                        comptime repeat = repeat_node[RepeatNode]
-                        comptime terminal = terminal_node[BracketClassNode]
-                        return Bool(
-                            _is_zero_or_more_dot[nodes, first.items[0]]()
-                            and repeat.greedy
-                            and terminal.negated
-                            and not fallback.negated
-                            and _same_bracket_ranges(terminal, fallback)
-                            and _bracket_accepts[terminal](ord("\n"))
-                        )
-    return False
+    comptime __guard node.isa[OrNode]() else:
+        return False
+    comptime alternation = node[OrNode]
+    comptime __guard alternation.count == 2 else:
+        return False
+    comptime first_node = nodes[alternation.options[0]]
+    comptime fallback_node = nodes[alternation.options[1]]
+    comptime __guard (
+        first_node.isa[SequenceNode]() and fallback_node.isa[BracketClassNode]()
+    ) else:
+        return False
+    comptime first = first_node[SequenceNode]
+    comptime fallback = fallback_node[BracketClassNode]
+    comptime __guard first.count == 2 else:
+        return False
+    comptime repeat_node = nodes[first.items[0]]
+    comptime terminal_node = nodes[first.items[1]]
+    comptime __guard (
+        repeat_node.isa[RepeatNode]() and terminal_node.isa[BracketClassNode]()
+    ) else:
+        return False
+    comptime repeat = repeat_node[RepeatNode]
+    comptime terminal = terminal_node[BracketClassNode]
+    return Bool(
+        _is_zero_or_more_dot[nodes, first.items[0]]()
+        and repeat.greedy
+        and terminal.negated
+        and not fallback.negated
+        and _same_bracket_ranges(terminal, fallback)
+        and _bracket_accepts[terminal](ord("\n"))
+    )
 
 
 def _prefixed_nested_dot_literal_index[
@@ -1456,52 +1449,54 @@ def _prefixed_nested_dot_literal_index[
 ]() -> Int:
     """Return `L` for `required nullable nullable (nullable .* (.*L.*))`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime root = node[SequenceNode]
-        comptime if root.count == 4:
-            comptime prefix_node = nodes[root.items[0]]
-            comptime nullable_one_node = nodes[root.items[1]]
-            comptime nullable_two_node = nodes[root.items[2]]
-            comptime tail_node = nodes[root.items[3]]
-            comptime if (
-                prefix_node.isa[RepeatNode]()
-                and nullable_one_node.isa[RepeatNode]()
-                and nullable_two_node.isa[RepeatNode]()
-                and tail_node.isa[SequenceNode]()
-            ):
-                comptime prefix = prefix_node[RepeatNode]
-                comptime nullable_one = nullable_one_node[RepeatNode]
-                comptime nullable_two = nullable_two_node[RepeatNode]
-                comptime tail = tail_node[SequenceNode]
-                comptime if (
-                    prefix.minimum > 0
-                    and nullable_one.minimum == 0
-                    and nullable_two.minimum == 0
-                    and tail.count == 3
-                ):
-                    comptime decoration_node = nodes[tail.items[0]]
-                    comptime core_node = nodes[tail.items[2]]
-                    comptime if (
-                        decoration_node.isa[RepeatNode]()
-                        and core_node.isa[SequenceNode]()
-                    ):
-                        comptime decoration = decoration_node[RepeatNode]
-                        comptime core = core_node[SequenceNode]
-                        comptime if decoration.minimum == 0 and core.count == 3:
-                            comptime literal_node = nodes[core.items[1]]
-                            comptime if literal_node.isa[LiteralNode]():
-                                comptime literal = literal_node[LiteralNode]
-                                comptime if (
-                                    _is_zero_or_more_dot[nodes, tail.items[1]]()
-                                    and _is_zero_or_more_dot[
-                                        nodes, core.items[0]
-                                    ]()
-                                    and _is_zero_or_more_dot[
-                                        nodes, core.items[2]
-                                    ]()
-                                    and literal.value.byte_length() > 0
-                                ):
-                                    return core.items[1]
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime root = node[SequenceNode]
+    comptime __guard root.count == 4 else:
+        return -1
+    comptime prefix_node = nodes[root.items[0]]
+    comptime nullable_one_node = nodes[root.items[1]]
+    comptime nullable_two_node = nodes[root.items[2]]
+    comptime tail_node = nodes[root.items[3]]
+    comptime __guard (
+        prefix_node.isa[RepeatNode]()
+        and nullable_one_node.isa[RepeatNode]()
+        and nullable_two_node.isa[RepeatNode]()
+        and tail_node.isa[SequenceNode]()
+    ) else:
+        return -1
+    comptime prefix = prefix_node[RepeatNode]
+    comptime nullable_one = nullable_one_node[RepeatNode]
+    comptime nullable_two = nullable_two_node[RepeatNode]
+    comptime tail = tail_node[SequenceNode]
+    comptime __guard (
+        prefix.minimum > 0
+        and nullable_one.minimum == 0
+        and nullable_two.minimum == 0
+        and tail.count == 3
+    ) else:
+        return -1
+    comptime decoration_node = nodes[tail.items[0]]
+    comptime core_node = nodes[tail.items[2]]
+    comptime __guard (
+        decoration_node.isa[RepeatNode]() and core_node.isa[SequenceNode]()
+    ) else:
+        return -1
+    comptime decoration = decoration_node[RepeatNode]
+    comptime core = core_node[SequenceNode]
+    comptime __guard decoration.minimum == 0 and core.count == 3 else:
+        return -1
+    comptime literal_node = nodes[core.items[1]]
+    comptime __guard literal_node.isa[LiteralNode]() else:
+        return -1
+    comptime literal = literal_node[LiteralNode]
+    comptime if (
+        _is_zero_or_more_dot[nodes, tail.items[1]]()
+        and _is_zero_or_more_dot[nodes, core.items[0]]()
+        and _is_zero_or_more_dot[nodes, core.items[2]]()
+        and literal.value.byte_length() > 0
+    ):
+        return core.items[1]
     return -1
 
 
@@ -1510,46 +1505,48 @@ def _is_repeated_lazy_dot_delimiter_suffix[
 ]() -> Bool:
     """Recognize `(.*?D){n}S` with one-byte literal `D` and `S`."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime root = node[SequenceNode]
-        comptime if root.count == 2:
-            comptime repeated_node = nodes[root.items[0]]
-            comptime suffix_node = nodes[root.items[1]]
-            comptime if (
-                repeated_node.isa[RepeatNode]()
-                and suffix_node.isa[LiteralNode]()
-            ):
-                comptime repeated = repeated_node[RepeatNode]
-                comptime child_node = nodes[repeated.child]
-                comptime suffix = suffix_node[LiteralNode]
-                comptime if (
-                    repeated.minimum > 0
-                    and repeated.minimum == repeated.maximum
-                    and child_node.isa[SequenceNode]()
-                    and suffix.value.byte_length() == 1
-                ):
-                    comptime child = child_node[SequenceNode]
-                    comptime if child.count == 2:
-                        comptime dot_node = nodes[child.items[0]]
-                        comptime delimiter_node = nodes[child.items[1]]
-                        comptime if (
-                            dot_node.isa[RepeatNode]()
-                            and delimiter_node.isa[LiteralNode]()
-                        ):
-                            comptime dot = dot_node[RepeatNode]
-                            comptime delimiter = delimiter_node[LiteralNode]
-                            comptime dot_child = nodes[dot.child]
-                            comptime if not dot_child.isa[CharClassNode]():
-                                return False
-                            return Bool(
-                                dot.minimum == 0
-                                and dot.maximum == -1
-                                and not dot.greedy
-                                and dot_child[CharClassNode].kind
-                                == CHAR_BYTE_DOT
-                                and delimiter.value.byte_length() == 1
-                            )
-    return False
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime root = node[SequenceNode]
+    comptime __guard root.count == 2 else:
+        return False
+    comptime repeated_node = nodes[root.items[0]]
+    comptime suffix_node = nodes[root.items[1]]
+    comptime __guard (
+        repeated_node.isa[RepeatNode]() and suffix_node.isa[LiteralNode]()
+    ) else:
+        return False
+    comptime repeated = repeated_node[RepeatNode]
+    comptime child_node = nodes[repeated.child]
+    comptime suffix = suffix_node[LiteralNode]
+    comptime __guard (
+        repeated.minimum > 0
+        and repeated.minimum == repeated.maximum
+        and child_node.isa[SequenceNode]()
+        and suffix.value.byte_length() == 1
+    ) else:
+        return False
+    comptime child = child_node[SequenceNode]
+    comptime __guard child.count == 2 else:
+        return False
+    comptime dot_node = nodes[child.items[0]]
+    comptime delimiter_node = nodes[child.items[1]]
+    comptime __guard (
+        dot_node.isa[RepeatNode]() and delimiter_node.isa[LiteralNode]()
+    ) else:
+        return False
+    comptime dot = dot_node[RepeatNode]
+    comptime delimiter = delimiter_node[LiteralNode]
+    comptime dot_child = nodes[dot.child]
+    comptime if not dot_child.isa[CharClassNode]():
+        return False
+    return Bool(
+        dot.minimum == 0
+        and dot.maximum == -1
+        and not dot.greedy
+        and dot_child[CharClassNode].kind == CHAR_BYTE_DOT
+        and delimiter.value.byte_length() == 1
+    )
 
 
 @fieldwise_init
@@ -1567,61 +1564,63 @@ def _two_delimiter_bracket_runs_plan[
 ]() -> Optional[_TwoDelimiterBracketRunsPlan]:
     """Extract the pieces of `A+D B+D+` when all runs are byte brackets."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 5:
-            comptime left_node = nodes[sequence.items[0]]
-            comptime first_delimiter_node = nodes[sequence.items[1]]
-            comptime middle_node = nodes[sequence.items[2]]
-            comptime second_delimiter_node = nodes[sequence.items[3]]
-            comptime right_node = nodes[sequence.items[4]]
-            comptime if (
-                left_node.isa[RepeatNode]()
-                and first_delimiter_node.isa[LiteralNode]()
-                and middle_node.isa[RepeatNode]()
-                and second_delimiter_node.isa[LiteralNode]()
-                and right_node.isa[RepeatNode]()
-            ):
-                comptime left = left_node[RepeatNode]
-                comptime middle = middle_node[RepeatNode]
-                comptime right = right_node[RepeatNode]
-                comptime first_delimiter = first_delimiter_node[LiteralNode]
-                comptime second_delimiter = second_delimiter_node[LiteralNode]
-                comptime left_child = nodes[left.child]
-                comptime middle_child = nodes[middle.child]
-                comptime right_child = nodes[right.child]
-                comptime if (
-                    left_child.isa[BracketClassNode]()
-                    and middle_child.isa[BracketClassNode]()
-                    and right_child.isa[BracketClassNode]()
-                ):
-                    comptime middle_bracket = middle_child[BracketClassNode]
-                    comptime right_bracket = right_child[BracketClassNode]
-                    comptime if (
-                        left.minimum == 1
-                        and left.maximum == -1
-                        and left.greedy
-                        and middle.minimum == 1
-                        and middle.maximum == -1
-                        and middle.greedy
-                        and right.minimum == 1
-                        and right.maximum == -1
-                        and right.greedy
-                        and first_delimiter.value.byte_length() == 1
-                        and second_delimiter.value.byte_length() == 1
-                        and middle_bracket.negated == right_bracket.negated
-                        and _same_bracket_ranges(middle_bracket, right_bracket)
-                    ):
-                        return _TwoDelimiterBracketRunsPlan(
-                            first_delimiter_index=sequence.items[1],
-                            left_child=left.child,
-                            middle_child=middle.child,
-                            left_minimum=left.minimum,
-                            middle_minimum=middle.minimum,
-                            second_byte=Int(
-                                second_delimiter.value.as_bytes()[0]
-                            ),
-                        )
+    comptime __guard node.isa[SequenceNode]() else:
+        return None
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 5 else:
+        return None
+    comptime left_node = nodes[sequence.items[0]]
+    comptime first_delimiter_node = nodes[sequence.items[1]]
+    comptime middle_node = nodes[sequence.items[2]]
+    comptime second_delimiter_node = nodes[sequence.items[3]]
+    comptime right_node = nodes[sequence.items[4]]
+    comptime __guard (
+        left_node.isa[RepeatNode]()
+        and first_delimiter_node.isa[LiteralNode]()
+        and middle_node.isa[RepeatNode]()
+        and second_delimiter_node.isa[LiteralNode]()
+        and right_node.isa[RepeatNode]()
+    ) else:
+        return None
+    comptime left = left_node[RepeatNode]
+    comptime middle = middle_node[RepeatNode]
+    comptime right = right_node[RepeatNode]
+    comptime first_delimiter = first_delimiter_node[LiteralNode]
+    comptime second_delimiter = second_delimiter_node[LiteralNode]
+    comptime left_child = nodes[left.child]
+    comptime middle_child = nodes[middle.child]
+    comptime right_child = nodes[right.child]
+    comptime __guard (
+        left_child.isa[BracketClassNode]()
+        and middle_child.isa[BracketClassNode]()
+        and right_child.isa[BracketClassNode]()
+    ) else:
+        return None
+    comptime middle_bracket = middle_child[BracketClassNode]
+    comptime right_bracket = right_child[BracketClassNode]
+    comptime if (
+        left.minimum == 1
+        and left.maximum == -1
+        and left.greedy
+        and middle.minimum == 1
+        and middle.maximum == -1
+        and middle.greedy
+        and right.minimum == 1
+        and right.maximum == -1
+        and right.greedy
+        and first_delimiter.value.byte_length() == 1
+        and second_delimiter.value.byte_length() == 1
+        and middle_bracket.negated == right_bracket.negated
+        and _same_bracket_ranges(middle_bracket, right_bracket)
+    ):
+        return _TwoDelimiterBracketRunsPlan(
+            first_delimiter_index=sequence.items[1],
+            left_child=left.child,
+            middle_child=middle.child,
+            left_minimum=left.minimum,
+            middle_minimum=middle.minimum,
+            second_byte=Int(second_delimiter.value.as_bytes()[0]),
+        )
     return None
 
 
@@ -1630,21 +1629,26 @@ def _is_leading_class_literal_search[
 ]() -> Bool:
     """Recognize `class* literal ($|.*)` for reverse-prefix matching."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count == 3:
-            comptime prefix = nodes[sequence.items[0]]
-            comptime middle = nodes[sequence.items[1]]
-            comptime if prefix.isa[RepeatNode]() and middle.isa[LiteralNode]():
-                comptime repeat = prefix[RepeatNode]
-                comptime if middle[LiteralNode].value.byte_length() > 0:
-                    return (
-                        repeat.maximum == -1
-                        and _is_one_byte_class_node[nodes, repeat.child]()
-                    ) and (
-                        _is_end_assertion_node[nodes, sequence.items[2]]()
-                        or _is_zero_or_more_dot[nodes, sequence.items[2]]()
-                    )
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 3 else:
+        return False
+    comptime prefix = nodes[sequence.items[0]]
+    comptime middle = nodes[sequence.items[1]]
+    comptime __guard prefix.isa[RepeatNode]() and middle.isa[
+        LiteralNode
+    ]() else:
+        return False
+    comptime repeat = prefix[RepeatNode]
+    comptime if middle[LiteralNode].value.byte_length() > 0:
+        return (
+            repeat.maximum == -1
+            and _is_one_byte_class_node[nodes, repeat.child]()
+        ) and (
+            _is_end_assertion_node[nodes, sequence.items[2]]()
+            or _is_zero_or_more_dot[nodes, sequence.items[2]]()
+        )
     return False
 
 
@@ -1682,24 +1686,23 @@ def _fixed_repeat_mask[
     repetition: Int,
     pattern_offset: Int,
 ](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
-    comptime if repetition == repeat.minimum:
+    comptime __guard repetition != repeat.minimum else:
         return SIMD[.bool, width](fill=True)
-    else:
-        comptime child_width = _fixed_node_width[nodes, repeat.child]()
-        return _fixed_node_mask[
-            nodes,
-            repeat.child,
-            width,
-            pattern_offset + repetition * child_width,
-        ](text, block_start) & _fixed_repeat_mask[
-            nodes,
-            repeat,
-            width,
-            repetition + 1,
-            pattern_offset,
-        ](
-            text, block_start
-        )
+    comptime child_width = _fixed_node_width[nodes, repeat.child]()
+    return _fixed_node_mask[
+        nodes,
+        repeat.child,
+        width,
+        pattern_offset + repetition * child_width,
+    ](text, block_start) & _fixed_repeat_mask[
+        nodes,
+        repeat,
+        width,
+        repetition + 1,
+        pattern_offset,
+    ](
+        text, block_start
+    )
 
 
 @inline(.always)
@@ -1710,22 +1713,21 @@ def _fixed_sequence_mask[
     item: Int,
     pattern_offset: Int,
 ](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return SIMD[.bool, width](fill=True)
-    else:
-        comptime child = sequence.items[item]
-        comptime child_width = _fixed_node_width[nodes, child]()
-        return _fixed_node_mask[nodes, child, width, pattern_offset](
-            text, block_start
-        ) & _fixed_sequence_mask[
-            nodes,
-            sequence,
-            width,
-            item + 1,
-            pattern_offset + child_width,
-        ](
-            text, block_start
-        )
+    comptime child = sequence.items[item]
+    comptime child_width = _fixed_node_width[nodes, child]()
+    return _fixed_node_mask[nodes, child, width, pattern_offset](
+        text, block_start
+    ) & _fixed_sequence_mask[
+        nodes,
+        sequence,
+        width,
+        item + 1,
+        pattern_offset + child_width,
+    ](
+        text, block_start
+    )
 
 
 @inline(.always)

@@ -1,6 +1,6 @@
 """Specialized regex search kernels."""
 
-from ._simd import _masked_load_bytes, _search_simd_width_ladder
+from ._simd import _search_simd_width_ladder
 from ._ast import (
     ASSERT_WORD_BOUNDARY,
     CHAR_BYTE_DOT,
@@ -21,6 +21,7 @@ from ._syntax import Regex
 from std.bit import count_trailing_zeros
 from std.math import iota
 from std.memory import pack_bits
+from std.sys.intrinsics import masked_load
 
 from ._common import (
     CLASS_SIMD_WIDTH,
@@ -45,40 +46,38 @@ def _is_unbounded_bracket_repeat[
     nodes: List[RegexNode], node: RegexNode
 ]() -> Bool:
     comptime child = _repeat_child_index[node, 1, -1]()
-    comptime if child < 0:
+    comptime __guard child >= 0 else:
         return False
-    else:
-        return comptime (nodes[child].isa[BracketClassNode]())
+    return comptime (nodes[child].isa[BracketClassNode]())
 
 
 def _is_bracket_infix_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     """Recognize `bracket+ one-byte-literal bracket+` at compile time."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 3:
-            comptime center = nodes[sequence.items[1]]
-            comptime if center.isa[LiteralNode]():
-                comptime literal = center[LiteralNode]
-                comptime if literal.value.byte_length() == 1:
-                    comptime if _is_unbounded_bracket_repeat[
-                        nodes, nodes[sequence.items[0]]
-                    ]():
-                        comptime if _is_unbounded_bracket_repeat[
-                            nodes, nodes[sequence.items[2]]
-                        ]():
-                            comptime left_repeat = nodes[sequence.items[0]][
-                                RepeatNode
-                            ]
-                            comptime left = nodes[left_repeat.child][
-                                BracketClassNode
-                            ]
-                            comptime delimiter = Int(
-                                literal.value.as_bytes()[0]
-                            )
-                            # Without backtracking, the left run must stop at
-                            # the delimiter for this transform to be exact.
-                            return not _bracket_accepts[left](delimiter)
-    return False
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 3 else:
+        return False
+    comptime center = nodes[sequence.items[1]]
+    comptime __guard center.isa[LiteralNode]() else:
+        return False
+    comptime literal = center[LiteralNode]
+    comptime __guard literal.value.byte_length() == 1 else:
+        return False
+    comptime __guard _is_unbounded_bracket_repeat[
+        nodes, nodes[sequence.items[0]]
+    ]() else:
+        return False
+    comptime __guard _is_unbounded_bracket_repeat[
+        nodes, nodes[sequence.items[2]]
+    ]() else:
+        return False
+    comptime left_repeat = nodes[sequence.items[0]][RepeatNode]
+    comptime left = nodes[left_repeat.child][BracketClassNode]
+    comptime delimiter = Int(literal.value.as_bytes()[0])
+    # Without backtracking, the left run must stop at
+    # the delimiter for this transform to be exact.
+    return not _bracket_accepts[left](delimiter)
 
 
 @inline(.always)
@@ -99,8 +98,8 @@ def _bracket_infix_block_matches[
     comptime if partial:
         var lanes = iota[DType.uint8, width]()
         active = lanes.lt(SIMD[.uint8, width](UInt8(count)))
-        values = _masked_load_bytes[width](
-            pointer.unsafe_offset(offset), active
+        values = masked_load[width, alignment=1](
+            pointer.unsafe_offset(offset), active, SIMD[.uint8, width](0)
         )
     else:
         values = pointer.unsafe_load[width=width, alignment=1](offset)
@@ -109,9 +108,10 @@ def _bracket_infix_block_matches[
         return False
     var left_values: SIMD[.uint8, width]
     comptime if partial:
-        left_values = _masked_load_bytes[width](
+        left_values = masked_load[width, alignment=1](
             pointer.unsafe_offset(offset - 1),
             candidates,
+            SIMD[.uint8, width](0),
         )
     else:
         left_values = pointer.unsafe_load[width=width, alignment=1](offset - 1)
@@ -120,9 +120,10 @@ def _bracket_infix_block_matches[
         return False
     var right_values: SIMD[.uint8, width]
     comptime if partial:
-        right_values = _masked_load_bytes[width](
+        right_values = masked_load[width, alignment=1](
             pointer.unsafe_offset(offset + 1),
             candidates,
+            SIMD[.uint8, width](0),
         )
     else:
         right_values = pointer.unsafe_load[width=width, alignment=1](offset + 1)
@@ -159,10 +160,11 @@ def _search_bracket_infix[
 
 
 def _repeat_child_index[node: RegexNode, minimum: Int, maximum: Int]() -> Int:
-    comptime if node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        comptime if repeat.minimum == minimum and repeat.maximum == maximum:
-            return repeat.child
+    comptime __guard node.isa[RepeatNode]() else:
+        return -1
+    comptime repeat = node[RepeatNode]
+    comptime if repeat.minimum == minimum and repeat.maximum == maximum:
+        return repeat.child
     return -1
 
 
@@ -170,79 +172,74 @@ def _is_prefixed_infix_search[
     nodes: List[RegexNode], root: RegexNode
 ]() -> Bool:
     """Recognize `(bracket bracket*) literal bracket+ optional?`."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 3 or sequence.count == 4:
-            comptime suffix_ok = sequence.count == 3 or _repeat_child_index[
-                nodes[sequence.items[3]], 0, 1
-            ]() >= 0
-            comptime prefix_node = nodes[sequence.items[0]]
-            comptime if suffix_ok and prefix_node.isa[SequenceNode]():
-                comptime prefix = prefix_node[SequenceNode]
-                comptime if prefix.count == 2:
-                    comptime tail_child = _repeat_child_index[
-                        nodes[prefix.items[1]], 0, -1
-                    ]()
-                    comptime if (
-                        nodes[prefix.items[0]].isa[BracketClassNode]()
-                        and tail_child >= 0
-                        and nodes[tail_child].isa[BracketClassNode]()
-                    ):
-                        comptime center = nodes[sequence.items[1]]
-                        comptime if center.isa[LiteralNode]():
-                            comptime literal = center[LiteralNode]
-                            comptime if (
-                                literal.value.byte_length() > 0
-                                and _is_unbounded_bracket_repeat[
-                                    nodes, nodes[sequence.items[2]]
-                                ]()
-                            ):
-                                comptime tail = nodes[tail_child][
-                                    BracketClassNode
-                                ]
-                                # The greedy prefix must stop at the literal
-                                # without requiring unsupported giveback.
-                                return not _bracket_accepts[tail](
-                                    Int(literal.value.as_bytes()[0])
-                                )
-    return False
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 3 or sequence.count == 4 else:
+        return False
+    comptime suffix_ok = sequence.count == 3 or _repeat_child_index[
+        nodes[sequence.items[3]], 0, 1
+    ]() >= 0
+    comptime prefix_node = nodes[sequence.items[0]]
+    comptime __guard suffix_ok and prefix_node.isa[SequenceNode]() else:
+        return False
+    comptime prefix = prefix_node[SequenceNode]
+    comptime __guard prefix.count == 2 else:
+        return False
+    comptime tail_child = _repeat_child_index[nodes[prefix.items[1]], 0, -1]()
+    comptime __guard (
+        nodes[prefix.items[0]].isa[BracketClassNode]()
+        and tail_child >= 0
+        and nodes[tail_child].isa[BracketClassNode]()
+    ) else:
+        return False
+    comptime center = nodes[sequence.items[1]]
+    comptime __guard center.isa[LiteralNode]() else:
+        return False
+    comptime literal = center[LiteralNode]
+    comptime __guard (
+        literal.value.byte_length() > 0
+        and _is_unbounded_bracket_repeat[nodes, nodes[sequence.items[2]]]()
+    ) else:
+        return False
+    comptime tail = nodes[tail_child][BracketClassNode]
+    # The greedy prefix must stop at the literal
+    # without requiring unsupported giveback.
+    return not _bracket_accepts[tail](Int(literal.value.as_bytes()[0]))
 
 
 def _is_literal_dot_infix[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     """Recognize byte-oriented `literal .* literal`."""
-    comptime if not root.isa[SequenceNode]():
+    comptime __guard root.isa[SequenceNode]() else:
         return False
-    else:
-        comptime sequence = root[SequenceNode]
-        comptime offset = 1 if (
-            sequence.count == 4 and nodes[sequence.items[0]].isa[EmptyNode]()
-        ) else 0
-        comptime if sequence.count != offset + 3:
-            return False
-        else:
-            comptime prefix = nodes[sequence.items[offset]]
-            comptime middle = nodes[sequence.items[offset + 1]]
-            comptime suffix = nodes[sequence.items[offset + 2]]
-            comptime if (
-                not prefix.isa[LiteralNode]()
-                or prefix[LiteralNode].value.byte_length() == 0
-                or not middle.isa[RepeatNode]()
-                or not suffix.isa[LiteralNode]()
-                or suffix[LiteralNode].value.byte_length() == 0
-            ):
-                return False
-            else:
-                comptime repeat = middle[RepeatNode]
-                comptime child = nodes[repeat.child]
-                return (
-                    repeat.minimum == 0
-                    and repeat.maximum == -1
-                    and child.isa[CharClassNode]()
-                    and (
-                        child[CharClassNode].kind == CHAR_BYTE_DOT
-                        or child[CharClassNode].kind == CHAR_BYTE_DOTALL
-                    )
-                )
+    comptime sequence = root[SequenceNode]
+    comptime offset = 1 if (
+        sequence.count == 4 and nodes[sequence.items[0]].isa[EmptyNode]()
+    ) else 0
+    comptime __guard sequence.count == offset + 3 else:
+        return False
+    comptime prefix = nodes[sequence.items[offset]]
+    comptime middle = nodes[sequence.items[offset + 1]]
+    comptime suffix = nodes[sequence.items[offset + 2]]
+    comptime __guard (
+        prefix.isa[LiteralNode]()
+        and prefix[LiteralNode].value.byte_length() > 0
+        and middle.isa[RepeatNode]()
+        and suffix.isa[LiteralNode]()
+        and suffix[LiteralNode].value.byte_length() > 0
+    ) else:
+        return False
+    comptime repeat = middle[RepeatNode]
+    comptime child = nodes[repeat.child]
+    return (
+        repeat.minimum == 0
+        and repeat.maximum == -1
+        and child.isa[CharClassNode]()
+        and (
+            child[CharClassNode].kind == CHAR_BYTE_DOT
+            or child[CharClassNode].kind == CHAR_BYTE_DOTALL
+        )
+    )
 
 
 @inline(.always)
@@ -458,9 +455,10 @@ def _search_infix_alternation[
 
 
 def _is_word_boundary_node[node: RegexNode]() -> Bool:
-    comptime if node.isa[ZeroWidthNode]():
-        comptime if node[ZeroWidthNode].kind == ASSERT_WORD_BOUNDARY:
-            return True
+    comptime __guard node.isa[ZeroWidthNode]() else:
+        return False
+    comptime if node[ZeroWidthNode].kind == ASSERT_WORD_BOUNDARY:
+        return True
     return False
 
 
@@ -468,86 +466,90 @@ def _is_ascii_word_node[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
     comptime if node.isa[CharClassNode]():
         return node[CharClassNode].kind == CHAR_ASCII_WORD
-    comptime if node.isa[BracketClassNode]():
-        comptime bracket = node[BracketClassNode]
-        comptime for value in range(256):
-            comptime if _bracket_accepts[bracket](value) != _is_ascii_word(
-                value
-            ):
-                return False
-        return True
-    return False
+    comptime __guard node.isa[BracketClassNode]() else:
+        return False
+    comptime bracket = node[BracketClassNode]
+    comptime for value in range(256):
+        comptime if _bracket_accepts[bracket](value) != _is_ascii_word(value):
+            return False
+    return True
 
 
 def _is_long_word_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     """Recognize `\\b\\w{minimum,}\\b` at compile time."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 3:
-            comptime if _is_word_boundary_node[nodes[sequence.items[0]]]():
-                comptime middle = nodes[sequence.items[1]]
-                comptime if middle.isa[RepeatNode]():
-                    comptime repeat = middle[RepeatNode]
-                    return (
-                        repeat.minimum > 0
-                        and repeat.maximum == -1
-                        and _is_ascii_word_node[nodes, repeat.child]()
-                        and _is_word_boundary_node[nodes[sequence.items[2]]]()
-                    )
-    return False
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 3 else:
+        return False
+    comptime __guard _is_word_boundary_node[nodes[sequence.items[0]]]() else:
+        return False
+    comptime middle = nodes[sequence.items[1]]
+    comptime __guard middle.isa[RepeatNode]() else:
+        return False
+    comptime repeat = middle[RepeatNode]
+    return (
+        repeat.minimum > 0
+        and repeat.maximum == -1
+        and _is_ascii_word_node[nodes, repeat.child]()
+        and _is_word_boundary_node[nodes[sequence.items[2]]]()
+    )
 
 
 def _is_word_run_literal_suffix[
     nodes: List[RegexNode], root: RegexNode
 ]() -> Bool:
     """Recognize `\\b\\w{minimum,}literal\\b` with an ASCII-word literal."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 4:
-            comptime repeat_node = nodes[sequence.items[1]]
-            comptime literal_node = nodes[sequence.items[2]]
-            comptime if (
-                _is_word_boundary_node[nodes[sequence.items[0]]]()
-                and repeat_node.isa[RepeatNode]()
-                and literal_node.isa[LiteralNode]()
-                and _is_word_boundary_node[nodes[sequence.items[3]]]()
-            ):
-                comptime repeat = repeat_node[RepeatNode]
-                comptime literal = literal_node[LiteralNode]
-                comptime if (
-                    repeat.minimum > 0
-                    and repeat.maximum == -1
-                    and _is_ascii_word_node[nodes, repeat.child]()
-                    and literal.value.byte_length() > 0
-                ):
-                    comptime for i in range(literal.value.byte_length()):
-                        comptime if not _is_ascii_word(
-                            Int(literal.value.as_bytes()[i])
-                        ):
-                            return False
-                    return True
-    return False
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 4 else:
+        return False
+    comptime repeat_node = nodes[sequence.items[1]]
+    comptime literal_node = nodes[sequence.items[2]]
+    comptime __guard (
+        _is_word_boundary_node[nodes[sequence.items[0]]]()
+        and repeat_node.isa[RepeatNode]()
+        and literal_node.isa[LiteralNode]()
+        and _is_word_boundary_node[nodes[sequence.items[3]]]()
+    ) else:
+        return False
+    comptime repeat = repeat_node[RepeatNode]
+    comptime literal = literal_node[LiteralNode]
+    comptime __guard (
+        repeat.minimum > 0
+        and repeat.maximum == -1
+        and _is_ascii_word_node[nodes, repeat.child]()
+        and literal.value.byte_length() > 0
+    ) else:
+        return False
+    comptime for i in range(literal.value.byte_length()):
+        comptime if not _is_ascii_word(Int(literal.value.as_bytes()[i])):
+            return False
+    return True
 
 
 def _word_boundary_inner_index[
     nodes: List[RegexNode], root: RegexNode
 ]() -> Int:
     """Return the expression inside `\b ... \b`, or `-1`."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 3:
-            comptime if (
-                _is_word_boundary_node[nodes[sequence.items[0]]]()
-                and _is_word_boundary_node[nodes[sequence.items[2]]]()
-            ):
-                return sequence.items[1]
-        comptime if sequence.count == 4:
-            comptime if (
-                nodes[sequence.items[0]].isa[EmptyNode]()
-                and _is_word_boundary_node[nodes[sequence.items[1]]]()
-                and _is_word_boundary_node[nodes[sequence.items[3]]]()
-            ):
-                return sequence.items[2]
+    comptime __guard root.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = root[SequenceNode]
+    comptime if sequence.count == 3:
+        comptime if (
+            _is_word_boundary_node[nodes[sequence.items[0]]]()
+            and _is_word_boundary_node[nodes[sequence.items[2]]]()
+        ):
+            return sequence.items[1]
+    comptime __guard sequence.count == 4 else:
+        return -1
+    comptime if (
+        nodes[sequence.items[0]].isa[EmptyNode]()
+        and _is_word_boundary_node[nodes[sequence.items[1]]]()
+        and _is_word_boundary_node[nodes[sequence.items[3]]]()
+    ):
+        return sequence.items[2]
     return -1
 
 
@@ -572,9 +574,10 @@ def _node_starts_only_with_ascii_word[
             return char_class.kind == CHAR_ASCII_WORD
         case .BracketClass(bracket):
             comptime for value in range(256):
-                comptime if _bracket_accepts[bracket](value):
-                    comptime if not _is_ascii_word(value):
-                        return False
+                comptime __guard _bracket_accepts[bracket](value) else:
+                    continue
+                comptime if not _is_ascii_word(value):
+                    return False
             return True
         case .Or(alternation):
             comptime if alternation.count == 0:
@@ -819,54 +822,63 @@ def _is_ascii_digit_bracket[node: RegexNode]() -> Bool:
 def _is_one_or_two_digit_pairs[
     nodes: List[RegexNode], node: RegexNode, pairs: Bool
 ]() -> Bool:
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime required = 2 if pairs else 1
-        comptime if sequence.count == required + 1:
-            comptime for i in range(required):
-                comptime if not _is_ascii_digit_bracket[
-                    nodes[sequence.items[i]]
-                ]():
-                    return False
-            comptime optional = _repeat_child_index[
-                nodes[sequence.items[required]], 0, 1
-            ]()
-            comptime if optional >= 0:
-                comptime if not pairs:
-                    return _is_ascii_digit_bracket[nodes[optional]]()
-                comptime child = nodes[optional]
-                comptime if child.isa[SequenceNode]():
-                    comptime pair = child[SequenceNode]
-                    comptime if pair.count == 2:
-                        return (
-                            _is_ascii_digit_bracket[nodes[pair.items[0]]]()
-                            and _is_ascii_digit_bracket[nodes[pair.items[1]]]()
-                        )
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime required = 2 if pairs else 1
+    comptime __guard sequence.count == required + 1 else:
+        return False
+    comptime for i in range(required):
+        comptime if not _is_ascii_digit_bracket[nodes[sequence.items[i]]]():
+            return False
+    comptime optional = _repeat_child_index[
+        nodes[sequence.items[required]], 0, 1
+    ]()
+    comptime __guard optional >= 0 else:
+        return False
+    comptime if not pairs:
+        return _is_ascii_digit_bracket[nodes[optional]]()
+    comptime child = nodes[optional]
+    comptime __guard child.isa[SequenceNode]() else:
+        return False
+    comptime pair = child[SequenceNode]
+    comptime if pair.count == 2:
+        return (
+            _is_ascii_digit_bracket[nodes[pair.items[0]]]()
+            and _is_ascii_digit_bracket[nodes[pair.items[1]]]()
+        )
     return False
 
 
 def _is_numeric_date_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     """Recognize `digits{1,2}/digits{1,2}/digits{2,4}` syntax."""
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count == 5:
-            comptime first_separator = nodes[sequence.items[1]]
-            comptime second_separator = nodes[sequence.items[3]]
-            comptime if first_separator.isa[LiteralNode]():
-                comptime if second_separator.isa[LiteralNode]():
-                    comptime first_literal = first_separator[LiteralNode]
-                    comptime second_literal = second_separator[LiteralNode]
-                    comptime if first_literal.value.byte_length() == 1:
-                        comptime if first_literal.value == second_literal.value:
-                            comptime if _is_one_or_two_digit_pairs[
-                                nodes, nodes[sequence.items[0]], False
-                            ]():
-                                comptime if _is_one_or_two_digit_pairs[
-                                    nodes, nodes[sequence.items[2]], False
-                                ]():
-                                    return _is_one_or_two_digit_pairs[
-                                        nodes, nodes[sequence.items[4]], True
-                                    ]()
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 5 else:
+        return False
+    comptime first_separator = nodes[sequence.items[1]]
+    comptime second_separator = nodes[sequence.items[3]]
+    comptime __guard first_separator.isa[LiteralNode]() else:
+        return False
+    comptime __guard second_separator.isa[LiteralNode]() else:
+        return False
+    comptime first_literal = first_separator[LiteralNode]
+    comptime second_literal = second_separator[LiteralNode]
+    comptime __guard first_literal.value.byte_length() == 1 else:
+        return False
+    comptime __guard first_literal.value == second_literal.value else:
+        return False
+    comptime __guard _is_one_or_two_digit_pairs[
+        nodes, nodes[sequence.items[0]], False
+    ]() else:
+        return False
+    comptime if _is_one_or_two_digit_pairs[
+        nodes, nodes[sequence.items[2]], False
+    ]():
+        return _is_one_or_two_digit_pairs[
+            nodes, nodes[sequence.items[4]], True
+        ]()
     return False
 
 

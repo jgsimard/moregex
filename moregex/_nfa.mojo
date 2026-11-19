@@ -148,17 +148,18 @@ def _static_transitions[
     var matches = UInt64(0)
     comptime for pc in range(state_count):
         comptime instruction = program[pc]
-        comptime if (
+        comptime __guard (
             instruction.kind == _NFA_BYTE
             or instruction.kind == _NFA_CLASS
             or instruction.kind == _NFA_BRACKET
-        ):
-            comptime closure = _static_epsilon_closure[state_count, program](
-                instruction.out1
-            )
-            closures[pc] = closure.consuming
-            comptime if closure.matched:
-                matches |= UInt64(1) << UInt64(pc)
+        ) else:
+            continue
+        comptime closure = _static_epsilon_closure[state_count, program](
+            instruction.out1
+        )
+        closures[pc] = closure.consuming
+        comptime if closure.matched:
+            matches |= UInt64(1) << UInt64(pc)
     return (closures, matches)
 
 

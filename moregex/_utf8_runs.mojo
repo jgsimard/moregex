@@ -53,80 +53,75 @@ def _same_byte_bracket[
 
 def _is_utf8_byte_sequence[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
-    comptime if not node.isa[SequenceNode]():
+    comptime __guard node.isa[SequenceNode]() else:
         return False
-    else:
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count < 2 or sequence.count > 4:
+    comptime sequence = node[SequenceNode]
+    comptime if sequence.count < 2 or sequence.count > 4:
+        return False
+    comptime for i in range(sequence.count):
+        comptime if not nodes[sequence.items[i]].isa[BracketClassNode]():
             return False
-        comptime for i in range(sequence.count):
-            comptime if not nodes[sequence.items[i]].isa[BracketClassNode]():
-                return False
-        return True
+    return True
 
 
 def _is_utf8_byte_class[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
-    comptime if not node.isa[OrNode]():
+    comptime __guard node.isa[OrNode]() else:
         return False
-    else:
-        comptime alternation = node[OrNode]
-        comptime if alternation.count < 2:
+    comptime alternation = node[OrNode]
+    comptime if alternation.count < 2:
+        return False
+    comptime for i in range(alternation.count):
+        comptime option_index = alternation.options[i]
+        comptime option = nodes[option_index]
+        comptime __guard (
+            option.isa[BracketClassNode]()
+            or _is_utf8_byte_sequence[nodes, option_index]()
+        ) else:
             return False
-        comptime for i in range(alternation.count):
-            comptime option_index = alternation.options[i]
-            comptime option = nodes[option_index]
-            comptime if option.isa[BracketClassNode]():
-                pass
-            elif _is_utf8_byte_sequence[nodes, option_index]():
-                pass
-            else:
-                return False
-        comptime for i in range(alternation.count):
-            comptime if _is_utf8_byte_sequence[nodes, alternation.options[i]]():
-                return True
-        return False
+    comptime for i in range(alternation.count):
+        comptime if _is_utf8_byte_sequence[nodes, alternation.options[i]]():
+            return True
+    return False
 
 
 def _is_utf8_byte_class_repeat[
     nodes: List[RegexNode], root_index: Int
 ]() -> Bool:
     comptime root = nodes[root_index]
-    comptime if not root.isa[RepeatNode]():
+    comptime __guard root.isa[RepeatNode]() else:
         return False
-    else:
-        comptime repeat = root[RepeatNode]
-        return repeat.minimum > 0 and _is_utf8_byte_class[nodes, repeat.child]()
+    comptime repeat = root[RepeatNode]
+    return repeat.minimum > 0 and _is_utf8_byte_class[nodes, repeat.child]()
 
 
 def _is_positive_utf8_repeat[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
-    comptime if not node.isa[RepeatNode]():
+    comptime __guard node.isa[RepeatNode]() else:
         return False
-    else:
-        comptime repeat = node[RepeatNode]
-        return (
-            repeat.minimum > 0
-            and repeat.maximum < 0
-            and _is_utf8_byte_class[nodes, repeat.child]()
-        )
+    comptime repeat = node[RepeatNode]
+    return (
+        repeat.minimum > 0
+        and repeat.maximum < 0
+        and _is_utf8_byte_class[nodes, repeat.child]()
+    )
 
 
 def _is_one_byte_separator[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
     comptime if node.isa[BracketClassNode]():
         return True
-    elif node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count == 0:
+    comptime __guard node.isa[OrNode]() else:
+        return False
+    comptime alternation = node[OrNode]
+    comptime if alternation.count == 0:
+        return False
+    comptime for option in range(alternation.count):
+        comptime if not nodes[alternation.options[option]].isa[
+            BracketClassNode
+        ]():
             return False
-        comptime for option in range(alternation.count):
-            comptime if not nodes[alternation.options[option]].isa[
-                BracketClassNode
-            ]():
-                return False
-        return True
-    return False
+    return True
 
 
 def _is_exact_utf8_class_sequence[
@@ -134,68 +129,64 @@ def _is_exact_utf8_class_sequence[
 ]() -> Bool:
     """Recognize exact UTF-8 class runs separated by one-byte classes."""
     comptime root = nodes[root_index]
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count < 3 or sequence.count % 2 == 0:
-            return False
-        comptime for item in range(sequence.count):
-            comptime if item % 2 == 0:
-                comptime node = nodes[sequence.items[item]]
-                comptime if node.isa[RepeatNode]():
-                    comptime repeat = node[RepeatNode]
-                    comptime if (
-                        repeat.minimum <= 0
-                        or repeat.minimum != repeat.maximum
-                        or not _is_utf8_byte_class[nodes, repeat.child]()
-                    ):
-                        return False
-                else:
-                    return False
-            else:
-                comptime if not _is_one_byte_separator[
-                    nodes, sequence.items[item]
-                ]():
-                    return False
-        return True
-    return False
+    comptime __guard root.isa[SequenceNode]() else:
+        return False
+    comptime sequence = root[SequenceNode]
+    comptime if sequence.count < 3 or sequence.count % 2 == 0:
+        return False
+    comptime for item in range(sequence.count):
+        comptime if item % 2 == 0:
+            comptime node = nodes[sequence.items[item]]
+            comptime __guard node.isa[RepeatNode]() else:
+                return False
+            comptime repeat = node[RepeatNode]
+            comptime if (
+                repeat.minimum <= 0
+                or repeat.minimum != repeat.maximum
+                or not _is_utf8_byte_class[nodes, repeat.child]()
+            ):
+                return False
+        else:
+            comptime if not _is_one_byte_separator[
+                nodes, sequence.items[item]
+            ]():
+                return False
+    return True
 
 
 def _is_utf8_class_literal_infix_option[
     nodes: List[RegexNode], node_index: Int
 ]() -> Bool:
     comptime node = nodes[node_index]
-    comptime if not node.isa[SequenceNode]():
+    comptime __guard node.isa[SequenceNode]() else:
         return False
-    else:
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count != 3:
-            return False
-        else:
-            comptime middle = nodes[sequence.items[1]]
-            return (
-                middle.isa[LiteralNode]()
-                and middle[LiteralNode].value.byte_length() > 0
-                and _is_positive_utf8_repeat[nodes, sequence.items[0]]()
-                and _is_positive_utf8_repeat[nodes, sequence.items[2]]()
-            )
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count == 3 else:
+        return False
+    comptime middle = nodes[sequence.items[1]]
+    return (
+        middle.isa[LiteralNode]()
+        and middle[LiteralNode].value.byte_length() > 0
+        and _is_positive_utf8_repeat[nodes, sequence.items[0]]()
+        and _is_positive_utf8_repeat[nodes, sequence.items[2]]()
+    )
 
 
 def _is_utf8_class_literal_infix_alternation[
     nodes: List[RegexNode], root_index: Int
 ]() -> Bool:
     comptime root = nodes[root_index]
-    comptime if not root.isa[OrNode]():
+    comptime __guard root.isa[OrNode]() else:
         return False
-    else:
-        comptime alternation = root[OrNode]
-        comptime if alternation.count == 0:
+    comptime alternation = root[OrNode]
+    comptime if alternation.count == 0:
+        return False
+    comptime for i in range(alternation.count):
+        comptime if not _is_utf8_class_literal_infix_option[
+            nodes, alternation.options[i]
+        ]():
             return False
-        comptime for i in range(alternation.count):
-            comptime if not _is_utf8_class_literal_infix_option[
-                nodes, alternation.options[i]
-            ]():
-                return False
-        return True
+    return True
 
 
 def _is_utf8_class_separated_literal_infix[
@@ -203,38 +194,35 @@ def _is_utf8_class_separated_literal_infix[
 ]() -> Bool:
     """Recognize `utf8+ byte+ literal byte+ utf8+` sequences."""
     comptime root = nodes[root_index]
-    comptime if not root.isa[SequenceNode]():
+    comptime __guard root.isa[SequenceNode]() else:
         return False
-    else:
-        comptime sequence = root[SequenceNode]
-        comptime if sequence.count != 5:
-            return False
-        else:
-            comptime literal = nodes[sequence.items[2]]
-            comptime left_separator = nodes[sequence.items[1]]
-            comptime right_separator = nodes[sequence.items[3]]
-            comptime if (
-                not literal.isa[LiteralNode]()
-                or literal[LiteralNode].value.byte_length() == 0
-                or not left_separator.isa[RepeatNode]()
-                or not right_separator.isa[RepeatNode]()
-            ):
-                return False
-            else:
-                comptime left_repeat = left_separator[RepeatNode]
-                comptime right_repeat = right_separator[RepeatNode]
-                return (
-                    _is_positive_utf8_repeat[nodes, sequence.items[0]]()
-                    and _is_positive_utf8_repeat[nodes, sequence.items[4]]()
-                    and left_repeat.greedy
-                    and right_repeat.greedy
-                    and left_repeat.minimum > 0
-                    and right_repeat.minimum > 0
-                    and left_repeat.maximum < 0
-                    and right_repeat.maximum < 0
-                    and _is_one_byte_separator[nodes, left_repeat.child]()
-                    and _is_one_byte_separator[nodes, right_repeat.child]()
-                )
+    comptime sequence = root[SequenceNode]
+    comptime __guard sequence.count == 5 else:
+        return False
+    comptime literal = nodes[sequence.items[2]]
+    comptime left_separator = nodes[sequence.items[1]]
+    comptime right_separator = nodes[sequence.items[3]]
+    comptime __guard (
+        literal.isa[LiteralNode]()
+        and literal[LiteralNode].value.byte_length() != 0
+        and left_separator.isa[RepeatNode]()
+        and right_separator.isa[RepeatNode]()
+    ) else:
+        return False
+    comptime left_repeat = left_separator[RepeatNode]
+    comptime right_repeat = right_separator[RepeatNode]
+    return (
+        _is_positive_utf8_repeat[nodes, sequence.items[0]]()
+        and _is_positive_utf8_repeat[nodes, sequence.items[4]]()
+        and left_repeat.greedy
+        and right_repeat.greedy
+        and left_repeat.minimum > 0
+        and right_repeat.minimum > 0
+        and left_repeat.maximum < 0
+        and right_repeat.maximum < 0
+        and _is_one_byte_separator[nodes, left_repeat.child]()
+        and _is_one_byte_separator[nodes, right_repeat.child]()
+    )
 
 
 def _bracket_is_below[bracket: BracketClassNode, limit: Int]() -> Bool:
@@ -289,14 +277,15 @@ def _utf8_ascii_masks[
     comptime alternation = nodes[node_index][OrNode]
     comptime for option in range(alternation.count):
         comptime node = nodes[alternation.options[option]]
-        comptime if node.isa[BracketClassNode]():
-            comptime bracket = node[BracketClassNode]
-            comptime for item in range(bracket.count):
-                comptime for value in range(
-                    bracket.lows[item], bracket.highs[item] + 1
-                ):
-                    comptime if value < 128:
-                        masks[value >> 6] |= UInt64(1) << UInt64(value & 63)
+        comptime __guard node.isa[BracketClassNode]() else:
+            continue
+        comptime bracket = node[BracketClassNode]
+        comptime for item in range(bracket.count):
+            comptime for value in range(
+                bracket.lows[item], bracket.highs[item] + 1
+            ):
+                comptime if value < 128:
+                    masks[value >> 6] |= UInt64(1) << UInt64(value & 63)
     return masks
 
 
@@ -308,28 +297,28 @@ def _utf8_two_byte_suffix_masks[
     comptime alternation = nodes[node_index][OrNode]
     comptime for option in range(alternation.count):
         comptime node = nodes[alternation.options[option]]
-        comptime if node.isa[SequenceNode]():
-            comptime sequence = node[SequenceNode]
-            comptime if sequence.count == 2:
-                comptime lead = nodes[sequence.items[0]][BracketClassNode]
-                comptime suffix = nodes[sequence.items[1]][BracketClassNode]
-                comptime for lead_item in range(lead.count):
-                    comptime for lead_value in range(
-                        lead.lows[lead_item], lead.highs[lead_item] + 1
+        comptime __guard node.isa[SequenceNode]() else:
+            continue
+        comptime sequence = node[SequenceNode]
+        comptime __guard sequence.count == 2 else:
+            continue
+        comptime lead = nodes[sequence.items[0]][BracketClassNode]
+        comptime suffix = nodes[sequence.items[1]][BracketClassNode]
+        comptime for lead_item in range(lead.count):
+            comptime for lead_value in range(
+                lead.lows[lead_item], lead.highs[lead_item] + 1
+            ):
+                comptime __guard 0xC0 <= lead_value <= 0xDF else:
+                    continue
+                comptime for suffix_item in range(suffix.count):
+                    comptime for suffix_value in range(
+                        suffix.lows[suffix_item],
+                        suffix.highs[suffix_item] + 1,
                     ):
-                        comptime if 0xC0 <= lead_value <= 0xDF:
-                            comptime for suffix_item in range(suffix.count):
-                                comptime for suffix_value in range(
-                                    suffix.lows[suffix_item],
-                                    suffix.highs[suffix_item] + 1,
-                                ):
-                                    comptime slot = (
-                                        (lead_value - 0xC0) * 4
-                                        + (suffix_value >> 6)
-                                    )
-                                    masks[slot] |= UInt64(1) << UInt64(
-                                        suffix_value & 63
-                                    )
+                        comptime slot = (
+                            (lead_value - 0xC0) * 4 + (suffix_value >> 6)
+                        )
+                        masks[slot] |= UInt64(1) << UInt64(suffix_value & 63)
     return masks
 
 
@@ -356,11 +345,12 @@ def _has_prior_sequence_prefix[
     comptime first = nodes[option.items[0]][BracketClassNode]
     comptime for i in range(option_position):
         comptime prior = nodes[alternation.options[i]]
-        comptime if prior.isa[SequenceNode]():
-            comptime sequence = prior[SequenceNode]
-            comptime prior_first = nodes[sequence.items[0]][BracketClassNode]
-            comptime if _same_byte_bracket[first, prior_first]():
-                return True
+        comptime __guard prior.isa[SequenceNode]() else:
+            continue
+        comptime sequence = prior[SequenceNode]
+        comptime prior_first = nodes[sequence.items[0]][BracketClassNode]
+        comptime if _same_byte_bracket[first, prior_first]():
+            return True
     return False
 
 
@@ -409,41 +399,48 @@ def _utf8_byte_class_width[
         if value < 128:
             comptime for i in range(alternation.count):
                 comptime option = nodes[alternation.options[i]]
-                comptime if option.isa[BracketClassNode]():
-                    comptime bracket = option[BracketClassNode]
-                    if _bracket_accepts[bracket](value):
-                        return 1
+                comptime __guard option.isa[BracketClassNode]() else:
+                    continue
+                comptime bracket = option[BracketClassNode]
+                if _bracket_accepts[bracket](value):
+                    return 1
             return 0
     comptime for i in range(alternation.count):
         comptime option_index = alternation.options[i]
         comptime option = nodes[option_index]
-        comptime if option.isa[SequenceNode]():
-            comptime if not _has_prior_sequence_prefix[nodes, alternation, i]():
-                comptime sequence = option[SequenceNode]
-                comptime first = nodes[sequence.items[0]][BracketClassNode]
-                if _bracket_accepts[first](value):
-                    comptime for j in range(i, alternation.count):
-                        comptime candidate_index = alternation.options[j]
-                        comptime candidate = nodes[candidate_index]
-                        comptime if candidate.isa[SequenceNode]():
-                            comptime candidate_sequence = candidate[
-                                SequenceNode
-                            ]
-                            comptime candidate_first = nodes[
-                                candidate_sequence.items[0]
-                            ][BracketClassNode]
-                            comptime if _same_byte_bracket[
-                                first, candidate_first
-                            ]():
-                                var width = _utf8_sequence_suffix_width[
-                                    nodes, candidate_index
-                                ](bytes, start)
-                                if width > 0:
-                                    return width
-        elif not _utf8_class_is_ascii_partitioned[nodes, alternation]():
-            comptime bracket = option[BracketClassNode]
-            if _bracket_accepts[bracket](value):
-                return 1
+        comptime __guard option.isa[SequenceNode]() else:
+            comptime if not _utf8_class_is_ascii_partitioned[
+                nodes, alternation
+            ]():
+                comptime bracket = option[BracketClassNode]
+                if _bracket_accepts[bracket](value):
+                    return 1
+            continue
+        comptime __guard not _has_prior_sequence_prefix[
+            nodes, alternation, i
+        ]() else:
+            continue
+        comptime sequence = option[SequenceNode]
+        comptime first = nodes[sequence.items[0]][BracketClassNode]
+        if _bracket_accepts[first](value):
+            comptime for j in range(i, alternation.count):
+                comptime candidate_index = alternation.options[j]
+                comptime candidate = nodes[candidate_index]
+                comptime __guard candidate.isa[SequenceNode]() else:
+                    continue
+                comptime candidate_sequence = candidate[SequenceNode]
+                comptime candidate_first = nodes[candidate_sequence.items[0]][
+                    BracketClassNode
+                ]
+                comptime __guard _same_byte_bracket[
+                    first, candidate_first
+                ]() else:
+                    continue
+                var width = _utf8_sequence_suffix_width[nodes, candidate_index](
+                    bytes, start
+                )
+                if width > 0:
+                    return width
     return 0
 
 

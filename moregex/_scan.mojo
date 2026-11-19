@@ -85,12 +85,11 @@ def _scan_generic[
                     text, candidate
                 )
                 if result:
-                    comptime if stop_after_first:
+                    comptime __guard not stop_after_first else:
                         return True
-                    else:
-                        var consumed = result.unsafe_value().consumed()
-                        total += _match_checksum[sum_spans](consumed)
-                        next_start = candidate + max(1, consumed)
+                    var consumed = result.unsafe_value().consumed()
+                    total += _match_checksum[sum_spans](consumed)
+                    next_start = candidate + max(1, consumed)
             return False
 
         var offset = 0
@@ -102,23 +101,21 @@ def _scan_generic[
             ](Int(text.as_bytes()[offset])):
                 var result = _match_node[regex.nodes, regex.root](text, offset)
                 if result:
-                    comptime if stop_after_first:
+                    comptime __guard not stop_after_first else:
                         return 1
-                    else:
-                        var consumed = result.unsafe_value().consumed()
-                        total += _match_checksum[sum_spans](consumed)
-                        next_start = offset + max(1, consumed)
+                    var consumed = result.unsafe_value().consumed()
+                    total += _match_checksum[sum_spans](consumed)
+                    next_start = offset + max(1, consumed)
             offset += 1
     else:
         while next_start < end:
             var result = _match_node[regex.nodes, regex.root](text, next_start)
             if result:
-                comptime if stop_after_first:
+                comptime __guard not stop_after_first else:
                     return 1
-                else:
-                    var consumed = result.unsafe_value().consumed()
-                    total += _match_checksum[sum_spans](consumed)
-                    next_start += max(1, consumed)
+                var consumed = result.unsafe_value().consumed()
+                total += _match_checksum[sum_spans](consumed)
+                next_start += max(1, consumed)
             else:
                 next_start += 1
     return total

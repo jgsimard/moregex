@@ -86,39 +86,37 @@ def _casefold_alternation_match_length_at[
         comptime option_index = alternation.options[i]
         comptime sequence = nodes[option_index][SequenceNode]
         comptime match_width = _fixed_node_width[nodes, option_index]()
-        comptime if match_width > 0:
-            comptime first = nodes[sequence.items[0]][BracketClassNode]
-            comptime second = nodes[sequence.items[1]][BracketClassNode]
-            comptime third = nodes[sequence.items[2]][BracketClassNode]
-            if start + match_width > text.byte_length():
-                continue
-            if not (
-                _bracket_accepts[first](Int(text.as_bytes()[start]))
-                and _bracket_accepts[second](Int(text.as_bytes()[start + 1]))
-                and _bracket_accepts[third](Int(text.as_bytes()[start + 2]))
-            ):
-                continue
-            comptime if _is_ascii_fold_literal_sequence[nodes, sequence]():
-                var matched = True
-                comptime for position in range(sequence.count):
-                    comptime letter = nodes[sequence.items[position]][
-                        BracketClassNode
-                    ]
-                    comptime folded = letter.lows[0] | 0x20
-                    matched &= (
-                        Int(text.as_bytes()[start + position]) | 0x20
-                    ) == folded
-                if matched:
-                    return match_width
-            else:
-                if all(
-                    _fixed_node_mask[nodes, option_index, 1, 0](text, start)
-                ):
-                    return match_width
-        else:
+        comptime __guard match_width > 0 else:
             var result = _match_node[nodes, option_index](text, start)
             if result:
                 return result.unsafe_value().consumed()
+            continue
+        comptime first = nodes[sequence.items[0]][BracketClassNode]
+        comptime second = nodes[sequence.items[1]][BracketClassNode]
+        comptime third = nodes[sequence.items[2]][BracketClassNode]
+        if start + match_width > text.byte_length():
+            continue
+        if not (
+            _bracket_accepts[first](Int(text.as_bytes()[start]))
+            and _bracket_accepts[second](Int(text.as_bytes()[start + 1]))
+            and _bracket_accepts[third](Int(text.as_bytes()[start + 2]))
+        ):
+            continue
+        comptime if _is_ascii_fold_literal_sequence[nodes, sequence]():
+            var matched = True
+            comptime for position in range(sequence.count):
+                comptime letter = nodes[sequence.items[position]][
+                    BracketClassNode
+                ]
+                comptime folded = letter.lows[0] | 0x20
+                matched &= (
+                    Int(text.as_bytes()[start + position]) | 0x20
+                ) == folded
+            if matched:
+                return match_width
+        else:
+            if all(_fixed_node_mask[nodes, option_index, 1, 0](text, start)):
+                return match_width
     return 0
 
 

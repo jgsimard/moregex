@@ -219,44 +219,45 @@ def _is_end_anchored[nodes: List[RegexNode], node_index: Int]() -> Bool:
     comptime node = nodes[node_index]
     comptime if _is_end_assertion_node[nodes, node_index]():
         return True
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime for offset in range(sequence.count):
-            comptime i = sequence.count - offset - 1
-            comptime item = nodes[sequence.items[i]]
-            comptime if item.isa[EmptyNode]():
-                continue
-            comptime if item.isa[ZeroWidthNode]():
-                comptime if _is_end_assertion_node[nodes, sequence.items[i]]():
-                    return True
-                continue
+    comptime __guard node.isa[SequenceNode]() else:
+        return False
+    comptime sequence = node[SequenceNode]
+    comptime for offset in range(sequence.count):
+        comptime i = sequence.count - offset - 1
+        comptime item = nodes[sequence.items[i]]
+        comptime if item.isa[EmptyNode]():
+            continue
+        comptime __guard item.isa[ZeroWidthNode]() else:
             return False
+        comptime if _is_end_assertion_node[nodes, sequence.items[i]]():
+            return True
     return False
 
 
 def _fixed_sequence_prefix_width[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ]() -> Int:
-    comptime if item == sequence.count - 1:
+    comptime __guard item != sequence.count - 1 else:
         return 0
-    else:
-        comptime width = _fixed_node_width[nodes, sequence.items[item]]()
-        comptime suffix_width = _fixed_sequence_prefix_width[
-            nodes, sequence, item + 1
-        ]()
-        comptime if width < 0 or suffix_width < 0:
-            return -1
-        return width + suffix_width
+    comptime width = _fixed_node_width[nodes, sequence.items[item]]()
+    comptime suffix_width = _fixed_sequence_prefix_width[
+        nodes, sequence, item + 1
+    ]()
+    comptime if width < 0 or suffix_width < 0:
+        return -1
+    return width + suffix_width
 
 
 def _end_anchored_fixed_width[nodes: List[RegexNode], node_index: Int]() -> Int:
     """Return consuming width for fixed-width followed by input end."""
     comptime node = nodes[node_index]
-    comptime if node.isa[SequenceNode]():
-        comptime sequence = node[SequenceNode]
-        comptime if sequence.count >= 2:
-            comptime if _is_end_assertion_node[
-                nodes, sequence.items[sequence.count - 1]
-            ]():
-                return _fixed_sequence_prefix_width[nodes, sequence, 0]()
+    comptime __guard node.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = node[SequenceNode]
+    comptime __guard sequence.count >= 2 else:
+        return -1
+    comptime if _is_end_assertion_node[
+        nodes, sequence.items[sequence.count - 1]
+    ]():
+        return _fixed_sequence_prefix_width[nodes, sequence, 0]()
     return -1

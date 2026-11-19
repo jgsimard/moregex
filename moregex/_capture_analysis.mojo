@@ -63,39 +63,37 @@ def _constant_capture_participation_sequence[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ]() -> Int:
     """Return the participating capture count, or -1 when it can vary."""
-    comptime if item == sequence.count:
+    comptime __guard item != sequence.count else:
         return 0
-    else:
-        comptime head = _constant_capture_participation[
-            nodes, sequence.items[item]
-        ]()
-        comptime tail = _constant_capture_participation_sequence[
-            nodes, sequence, item + 1
-        ]()
-        comptime if head < 0 or tail < 0:
-            return -1
-        return head + tail
+    comptime head = _constant_capture_participation[
+        nodes, sequence.items[item]
+    ]()
+    comptime tail = _constant_capture_participation_sequence[
+        nodes, sequence, item + 1
+    ]()
+    comptime if head < 0 or tail < 0:
+        return -1
+    return head + tail
 
 
 def _constant_capture_participation_alternation[
     nodes: List[RegexNode], alternation: OrNode
 ]() -> Int:
     """Return a common alternative capture count, or -1 when it varies."""
-    comptime if alternation.count == 0:
+    comptime __guard alternation.count != 0 else:
         return 0
-    else:
-        comptime expected = _constant_capture_participation[
-            nodes, alternation.options[0]
+    comptime expected = _constant_capture_participation[
+        nodes, alternation.options[0]
+    ]()
+    comptime if expected < 0:
+        return -1
+    comptime for option in range(1, alternation.count):
+        comptime actual = _constant_capture_participation[
+            nodes, alternation.options[option]
         ]()
-        comptime if expected < 0:
+        comptime if actual != expected:
             return -1
-        comptime for option in range(1, alternation.count):
-            comptime actual = _constant_capture_participation[
-                nodes, alternation.options[option]
-            ]()
-            comptime if actual != expected:
-                return -1
-        return expected
+    return expected
 
 
 def _constant_capture_participation[

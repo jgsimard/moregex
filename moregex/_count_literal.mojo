@@ -65,14 +65,13 @@ def _count_static_literal[
 
 def _literal_has_unique_first_byte[value: String]() -> Bool:
     """Return whether literal matches can never overlap one another."""
-    comptime if value.byte_length() < 2:
+    comptime __guard value.byte_length() >= 2 else:
         return False
-    else:
-        comptime first = value.as_bytes()[0]
-        comptime for i in range(1, value.byte_length()):
-            comptime if value.as_bytes()[i] == first:
-                return False
-        return True
+    comptime first = value.as_bytes()[0]
+    comptime for i in range(1, value.byte_length()):
+        comptime if value.as_bytes()[i] == first:
+            return False
+    return True
 
 
 @inline(.always)
@@ -134,13 +133,14 @@ def _literal_unique_high_byte_offset[value: String]() -> Int:
     """Return a unique non-ASCII byte offset suitable as a SIMD anchor."""
     comptime for position in range(value.byte_length()):
         comptime byte = Int(value.as_bytes()[position])
-        comptime if byte >= 0x80:
-            var occurrences = 0
-            comptime for candidate in range(value.byte_length()):
-                comptime if Int(value.as_bytes()[candidate]) == byte:
-                    occurrences += 1
-            if occurrences == 1:
-                return position
+        comptime __guard byte >= 0x80 else:
+            continue
+        var occurrences = 0
+        comptime for candidate in range(value.byte_length()):
+            comptime if Int(value.as_bytes()[candidate]) == byte:
+                occurrences += 1
+        if occurrences == 1:
+            return position
     return -1
 
 

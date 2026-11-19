@@ -187,35 +187,36 @@ def _capture_delimiter_is_disjoint[
     nodes: List[RegexNode], delimiter_index: Int, atom_index: Int
 ]() -> Bool:
     comptime node = nodes[delimiter_index]
-    comptime if node.isa[LiteralNode]():
-        comptime delimiter = node[LiteralNode]
-        comptime if delimiter.value.byte_length() == 1:
-            comptime value = Int(delimiter.value.as_bytes()[0])
-            return not _byte_capture_atom_accepts[nodes, atom_index](value)
-    return False
+    comptime __guard node.isa[LiteralNode]() else:
+        return False
+    comptime delimiter = node[LiteralNode]
+    comptime __guard delimiter.value.byte_length() == 1 else:
+        return False
+    comptime value = Int(delimiter.value.as_bytes()[0])
+    return not _byte_capture_atom_accepts[nodes, atom_index](value)
 
 
 def _is_delimited_capture_field[
     regex: Regex, root: SequenceNode, group: Int
 ]() -> Bool:
     comptime node = regex.nodes[root.items[2 * group - 1]]
-    comptime if node.isa[CaptureNode]():
-        comptime capture = node[CaptureNode]
-        comptime if capture.index != group:
+    comptime __guard node.isa[CaptureNode]() else:
+        return False
+    comptime capture = node[CaptureNode]
+    comptime if capture.index != group:
+        return False
+    comptime child = regex.nodes[capture.child]
+    comptime if child.isa[RepeatNode]():
+        comptime if child[RepeatNode].maximum == 0:
             return False
-        comptime child = regex.nodes[capture.child]
-        comptime if child.isa[RepeatNode]():
-            comptime if child[RepeatNode].maximum == 0:
-                return False
-        comptime atom_index = _capture_atom_index[regex.nodes, capture.child]()
-        comptime if not _is_byte_capture_atom[regex.nodes, atom_index]():
-            return False
-        comptime if group < regex.capture_count:
-            return _capture_delimiter_is_disjoint[
-                regex.nodes, root.items[2 * group], atom_index
-            ]()
-        return True
-    return False
+    comptime atom_index = _capture_atom_index[regex.nodes, capture.child]()
+    comptime if not _is_byte_capture_atom[regex.nodes, atom_index]():
+        return False
+    comptime if group < regex.capture_count:
+        return _capture_delimiter_is_disjoint[
+            regex.nodes, root.items[2 * group], atom_index
+        ]()
+    return True
 
 
 def _is_delimited_capture_sequence[regex: Regex, root: SequenceNode]() -> Bool:
@@ -263,103 +264,82 @@ def _capture_sequence_stops_before_literal[
     comptime capture = regex.nodes[capture_index][CaptureNode]
     comptime child = regex.nodes[capture.child]
     comptime delimiter = regex.nodes[delimiter_index]
-    comptime if (
-        not child.isa[SequenceNode]()
-        or not delimiter.isa[LiteralNode]()
-        or delimiter[LiteralNode].value.byte_length() != 1
-    ):
+    comptime __guard (
+        child.isa[SequenceNode]()
+        and delimiter.isa[LiteralNode]()
+        and delimiter[LiteralNode].value.byte_length() == 1
+    ) else:
         return False
-    else:
-        comptime sequence = child[SequenceNode]
-        comptime if sequence.count == 0:
-            return False
-        else:
-            comptime final = regex.nodes[sequence.items[sequence.count - 1]]
-            comptime if not final.isa[RepeatNode]():
-                return False
-            else:
-                comptime repeat = final[RepeatNode]
-                comptime if not _is_byte_capture_atom[
-                    regex.nodes, repeat.child
-                ]():
-                    return False
-                else:
-                    comptime value = Int(
-                        delimiter[LiteralNode].value.as_bytes()[0]
-                    )
-                    return not _byte_capture_atom_accepts[
-                        regex.nodes, repeat.child
-                    ](value)
+    comptime sequence = child[SequenceNode]
+    comptime __guard sequence.count != 0 else:
+        return False
+    comptime final = regex.nodes[sequence.items[sequence.count - 1]]
+    comptime __guard final.isa[RepeatNode]() else:
+        return False
+    comptime repeat = final[RepeatNode]
+    comptime __guard _is_byte_capture_atom[regex.nodes, repeat.child]() else:
+        return False
+    comptime value = Int(delimiter[LiteralNode].value.as_bytes()[0])
+    return not _byte_capture_atom_accepts[regex.nodes, repeat.child](value)
 
 
 def _is_anchored_lazy_capture_record[regex: Regex]() -> Bool:
     """Recognize deterministic captured prefixes followed by a lazy body."""
-    comptime if regex.capture_count != 5:
+    comptime __guard regex.capture_count == 5 else:
         return False
-    else:
-        comptime root_node = regex.nodes[regex.capture_root]
-        comptime if not root_node.isa[SequenceNode]():
-            return False
-        else:
-            comptime root = root_node[SequenceNode]
-            comptime if root.count != 13:
-                return False
-            elif (
-                not _is_exact_assertion[
-                    regex.nodes, root.items[0], ASSERT_INPUT_START
-                ]()
-                or not _is_exact_assertion[
-                    regex.nodes, root.items[12], ASSERT_INPUT_END
-                ]()
-                or not _is_capture_group_at[regex, root, 1, 1]()
-                or not _is_capture_group_at[regex, root, 3, 2]()
-                or not _is_capture_group_at[regex, root, 6, 3]()
-                or not _is_capture_group_at[regex, root, 7, 4]()
-                or not _is_capture_group_at[regex, root, 10, 5]()
-                or not regex.nodes[root.items[2]].isa[LiteralNode]()
-                or not regex.nodes[root.items[5]].isa[LiteralNode]()
-                or not regex.nodes[root.items[8]].isa[LiteralNode]()
-                or not regex.nodes[root.items[9]].isa[LiteralNode]()
-                or not regex.nodes[root.items[11]].isa[LiteralNode]()
-                or not _capture_sequence_stops_before_literal[
-                    regex, root.items[1], root.items[2]
-                ]()
-            ):
-                return False
-            else:
-                comptime level = regex.nodes[root.items[3]][CaptureNode]
-                comptime header = regex.nodes[root.items[6]][CaptureNode]
-                comptime body = regex.nodes[root.items[7]][CaptureNode]
-                comptime tail = regex.nodes[root.items[10]][CaptureNode]
-                comptime body_repeat = regex.nodes[body.child]
-                comptime tail_repeat = regex.nodes[tail.child]
-                comptime if (
-                    not _is_byte_capture_atom[regex.nodes, level.child]()
-                    or not _is_byte_capture_atom[regex.nodes, root.items[4]]()
-                    or not regex.nodes[header.child].isa[RepeatNode]()
-                    or not body_repeat.isa[RepeatNode]()
-                    or not tail_repeat.isa[RepeatNode]()
-                ):
-                    return False
-                else:
-                    comptime lazy = body_repeat[RepeatNode]
-                    comptime body_atom = regex.nodes[lazy.child]
-                    comptime suffix = tail_repeat[RepeatNode]
-                    comptime if not body_atom.isa[CharClassNode]():
-                        return False
-                    else:
-                        return (
-                            lazy.minimum == 0
-                            and lazy.maximum < 0
-                            and not lazy.greedy
-                            and body_atom[CharClassNode].kind == CHAR_BYTE_DOT
-                            and suffix.minimum == 0
-                            and suffix.maximum < 0
-                            and suffix.greedy
-                            and _is_byte_capture_atom[
-                                regex.nodes, suffix.child
-                            ]()
-                        )
+    comptime root_node = regex.nodes[regex.capture_root]
+    comptime __guard root_node.isa[SequenceNode]() else:
+        return False
+    comptime root = root_node[SequenceNode]
+    comptime __guard root.count == 13 else:
+        return False
+    comptime __guard (
+        _is_exact_assertion[regex.nodes, root.items[0], ASSERT_INPUT_START]()
+        and _is_exact_assertion[regex.nodes, root.items[12], ASSERT_INPUT_END]()
+        and _is_capture_group_at[regex, root, 1, 1]()
+        and _is_capture_group_at[regex, root, 3, 2]()
+        and _is_capture_group_at[regex, root, 6, 3]()
+        and _is_capture_group_at[regex, root, 7, 4]()
+        and _is_capture_group_at[regex, root, 10, 5]()
+        and regex.nodes[root.items[2]].isa[LiteralNode]()
+        and regex.nodes[root.items[5]].isa[LiteralNode]()
+        and regex.nodes[root.items[8]].isa[LiteralNode]()
+        and regex.nodes[root.items[9]].isa[LiteralNode]()
+        and regex.nodes[root.items[11]].isa[LiteralNode]()
+        and _capture_sequence_stops_before_literal[
+            regex, root.items[1], root.items[2]
+        ]()
+    ) else:
+        return False
+    comptime level = regex.nodes[root.items[3]][CaptureNode]
+    comptime header = regex.nodes[root.items[6]][CaptureNode]
+    comptime body = regex.nodes[root.items[7]][CaptureNode]
+    comptime tail = regex.nodes[root.items[10]][CaptureNode]
+    comptime body_repeat = regex.nodes[body.child]
+    comptime tail_repeat = regex.nodes[tail.child]
+    comptime __guard (
+        _is_byte_capture_atom[regex.nodes, level.child]()
+        and _is_byte_capture_atom[regex.nodes, root.items[4]]()
+        and regex.nodes[header.child].isa[RepeatNode]()
+        and body_repeat.isa[RepeatNode]()
+        and tail_repeat.isa[RepeatNode]()
+    ) else:
+        return False
+    comptime lazy = body_repeat[RepeatNode]
+    comptime body_atom = regex.nodes[lazy.child]
+    comptime suffix = tail_repeat[RepeatNode]
+    comptime __guard body_atom.isa[CharClassNode]() else:
+        return False
+    return (
+        lazy.minimum == 0
+        and lazy.maximum < 0
+        and not lazy.greedy
+        and body_atom[CharClassNode].kind == CHAR_BYTE_DOT
+        and suffix.minimum == 0
+        and suffix.maximum < 0
+        and suffix.greedy
+        and _is_byte_capture_atom[regex.nodes, suffix.child]()
+    )
 
 
 @inline(.always)
@@ -532,18 +512,19 @@ def _fixed_capture_sequence_item_mask[
     elif node.isa[RepeatNode]():
         comptime repeat = node[RepeatNode]
         comptime child = regex.nodes[repeat.child]
-        comptime if (
+        comptime __guard (
             item + 1 == sequence.count
             and repeat.minimum == 0
             and repeat.maximum == 1
             and child.isa[CaptureNode]()
+        ) else:
+            return -1
+        comptime capture = child[CaptureNode]
+        comptime if (
+            _fixed_node_width[regex.nodes, capture.child]() > 0
+            and _capture_subtree_mask[regex.nodes, capture.child]() == 0
         ):
-            comptime capture = child[CaptureNode]
-            comptime if (
-                _fixed_node_width[regex.nodes, capture.child]() > 0
-                and _capture_subtree_mask[regex.nodes, capture.child]() == 0
-            ):
-                return Int(1) << (capture.index - 1)
+            return Int(1) << (capture.index - 1)
         return -1
     else:
         comptime if (
@@ -559,18 +540,18 @@ def _is_fixed_capture_sequence[regex: Regex]() -> Bool:
     comptime if regex.capture_count == 0:
         return False
     comptime root_node = regex.nodes[regex.capture_root]
-    comptime if root_node.isa[SequenceNode]():
-        comptime root = root_node[SequenceNode]
-        var mask = 0
-        comptime for item in range(root.count):
-            comptime item_mask = _fixed_capture_sequence_item_mask[
-                regex, root, item
-            ]()
-            comptime if item_mask < 0:
-                return False
-            mask |= item_mask
-        return mask == (Int(1) << regex.capture_count) - 1
-    return False
+    comptime __guard root_node.isa[SequenceNode]() else:
+        return False
+    comptime root = root_node[SequenceNode]
+    var mask = 0
+    comptime for item in range(root.count):
+        comptime item_mask = _fixed_capture_sequence_item_mask[
+            regex, root, item
+        ]()
+        comptime if item_mask < 0:
+            return False
+        mask |= item_mask
+    return mask == (Int(1) << regex.capture_count) - 1
 
 
 @inline(.always)
@@ -639,24 +620,26 @@ def _capture_stops_before_delimiter[
     delimiter_index: Int,
 ]() -> Bool:
     comptime node = regex.nodes[capture_index]
-    comptime if node.isa[CaptureNode]():
-        comptime capture = node[CaptureNode]
-        comptime if (
-            capture.index != group
-            or _capture_subtree_mask[regex.nodes, capture.child]() != 0
-        ):
-            return False
-        comptime if _fixed_node_width[regex.nodes, capture.child]() > 0:
-            return True
-        comptime child = regex.nodes[capture.child]
-        comptime if child.isa[RepeatNode]():
-            comptime repeat = child[RepeatNode]
-            comptime if repeat.maximum != 0 and _is_byte_capture_atom[
-                regex.nodes, repeat.child
-            ]():
-                return _capture_delimiter_is_disjoint[
-                    regex.nodes, delimiter_index, repeat.child
-                ]()
+    comptime __guard node.isa[CaptureNode]() else:
+        return False
+    comptime capture = node[CaptureNode]
+    comptime if (
+        capture.index != group
+        or _capture_subtree_mask[regex.nodes, capture.child]() != 0
+    ):
+        return False
+    comptime if _fixed_node_width[regex.nodes, capture.child]() > 0:
+        return True
+    comptime child = regex.nodes[capture.child]
+    comptime __guard child.isa[RepeatNode]() else:
+        return False
+    comptime repeat = child[RepeatNode]
+    comptime if repeat.maximum != 0 and _is_byte_capture_atom[
+        regex.nodes, repeat.child
+    ]():
+        return _capture_delimiter_is_disjoint[
+            regex.nodes, delimiter_index, repeat.child
+        ]()
     return False
 
 
@@ -664,41 +647,43 @@ def _is_optional_delimited_capture_tail[
     regex: Regex, node_index: Int, group: Int
 ]() -> Bool:
     comptime node = regex.nodes[node_index]
-    comptime if node.isa[RepeatNode]():
-        comptime repeat = node[RepeatNode]
-        comptime child = regex.nodes[repeat.child]
-        comptime if (
-            repeat.minimum == 0
-            and repeat.maximum == 1
-            and child.isa[SequenceNode]()
-        ):
-            comptime sequence = child[SequenceNode]
-            comptime if sequence.count == 2:
-                comptime delimiter = regex.nodes[sequence.items[0]]
-                comptime capture_node = regex.nodes[sequence.items[1]]
-                comptime if delimiter.isa[LiteralNode]() and capture_node.isa[
-                    CaptureNode
-                ]():
-                    comptime capture = capture_node[CaptureNode]
-                    comptime if (
-                        delimiter[LiteralNode].value.byte_length() == 1
-                        and capture.index == group
-                        and _capture_subtree_mask[regex.nodes, capture.child]()
-                        == 0
-                    ):
-                        comptime if _fixed_node_width[
-                            regex.nodes, capture.child
-                        ]() > 0:
-                            return True
-                        comptime captured = regex.nodes[capture.child]
-                        comptime if captured.isa[RepeatNode]():
-                            return (
-                                captured[RepeatNode].maximum != 0
-                                and _is_byte_capture_atom[
-                                    regex.nodes,
-                                    captured[RepeatNode].child,
-                                ]()
-                            )
+    comptime __guard node.isa[RepeatNode]() else:
+        return False
+    comptime repeat = node[RepeatNode]
+    comptime child = regex.nodes[repeat.child]
+    comptime __guard (
+        repeat.minimum == 0
+        and repeat.maximum == 1
+        and child.isa[SequenceNode]()
+    ) else:
+        return False
+    comptime sequence = child[SequenceNode]
+    comptime __guard sequence.count == 2 else:
+        return False
+    comptime delimiter = regex.nodes[sequence.items[0]]
+    comptime capture_node = regex.nodes[sequence.items[1]]
+    comptime __guard (
+        delimiter.isa[LiteralNode]() and capture_node.isa[CaptureNode]()
+    ) else:
+        return False
+    comptime capture = capture_node[CaptureNode]
+    comptime __guard (
+        delimiter[LiteralNode].value.byte_length() == 1
+        and capture.index == group
+        and _capture_subtree_mask[regex.nodes, capture.child]() == 0
+    ) else:
+        return False
+    comptime if _fixed_node_width[regex.nodes, capture.child]() > 0:
+        return True
+    comptime captured = regex.nodes[capture.child]
+    comptime if captured.isa[RepeatNode]():
+        return (
+            captured[RepeatNode].maximum != 0
+            and _is_byte_capture_atom[
+                regex.nodes,
+                captured[RepeatNode].child,
+            ]()
+        )
     return False
 
 
@@ -707,40 +692,40 @@ def _is_delimited_capture_record_with_optional_tail[regex: Regex]() -> Bool:
     comptime if regex.capture_count < 2:
         return False
     comptime root_node = regex.nodes[regex.capture_root]
-    comptime if root_node.isa[SequenceNode]():
-        comptime root = root_node[SequenceNode]
-        comptime if root.count != 2 * regex.capture_count:
-            return False
-        comptime if not _is_exact_assertion[
-            regex.nodes, root.items[0], ASSERT_INPUT_START
-        ]() or not _is_exact_assertion[
-            regex.nodes,
-            root.items[root.count - 1],
-            ASSERT_INPUT_END,
-        ]():
-            return False
-        comptime for group in range(1, regex.capture_count - 1):
-            comptime if not _capture_stops_before_delimiter[
-                regex,
-                root.items[2 * group - 1],
-                group,
-                root.items[2 * group],
-            ]():
-                return False
-        comptime tail_index = root.items[root.count - 2]
-        comptime if _is_optional_delimited_capture_tail[
-            regex, tail_index, regex.capture_count
-        ]():
-            comptime tail = regex.nodes[tail_index][RepeatNode]
-            comptime tail_sequence = regex.nodes[tail.child][SequenceNode]
-            return _capture_stops_before_delimiter[
-                regex,
-                root.items[root.count - 3],
-                regex.capture_count - 1,
-                tail_sequence.items[0],
-            ]()
+    comptime __guard root_node.isa[SequenceNode]() else:
         return False
-    return False
+    comptime root = root_node[SequenceNode]
+    comptime if root.count != 2 * regex.capture_count:
+        return False
+    comptime if not _is_exact_assertion[
+        regex.nodes, root.items[0], ASSERT_INPUT_START
+    ]() or not _is_exact_assertion[
+        regex.nodes,
+        root.items[root.count - 1],
+        ASSERT_INPUT_END,
+    ]():
+        return False
+    comptime for group in range(1, regex.capture_count - 1):
+        comptime if not _capture_stops_before_delimiter[
+            regex,
+            root.items[2 * group - 1],
+            group,
+            root.items[2 * group],
+        ]():
+            return False
+    comptime tail_index = root.items[root.count - 2]
+    comptime __guard _is_optional_delimited_capture_tail[
+        regex, tail_index, regex.capture_count
+    ]() else:
+        return False
+    comptime tail = regex.nodes[tail_index][RepeatNode]
+    comptime tail_sequence = regex.nodes[tail.child][SequenceNode]
+    return _capture_stops_before_delimiter[
+        regex,
+        root.items[root.count - 3],
+        regex.capture_count - 1,
+        tail_sequence.items[0],
+    ]()
 
 
 @inline(.always)
@@ -800,22 +785,22 @@ def _is_captured_fixed_width_alternation_node[
     regex: Regex, node_index: Int
 ]() -> Bool:
     comptime node = regex.nodes[node_index]
-    comptime if node.isa[OrNode]():
-        comptime alternation = node[OrNode]
-        comptime if alternation.count < 2:
+    comptime __guard node.isa[OrNode]() else:
+        return False
+    comptime alternation = node[OrNode]
+    comptime if alternation.count < 2:
+        return False
+    comptime for option in range(alternation.count):
+        comptime option_node = regex.nodes[alternation.options[option]]
+        comptime if not option_node.isa[CaptureNode]():
             return False
-        comptime for option in range(alternation.count):
-            comptime option_node = regex.nodes[alternation.options[option]]
-            comptime if not option_node.isa[CaptureNode]():
-                return False
-            comptime capture = option_node[CaptureNode]
-            comptime if (
-                _fixed_node_width[regex.nodes, capture.child]() <= 0
-                or _capture_subtree_mask[regex.nodes, capture.child]() != 0
-            ):
-                return False
-        return True
-    return False
+        comptime capture = option_node[CaptureNode]
+        comptime if (
+            _fixed_node_width[regex.nodes, capture.child]() <= 0
+            or _capture_subtree_mask[regex.nodes, capture.child]() != 0
+        ):
+            return False
+    return True
 
 
 def _captured_fixed_width_alternation_index[regex: Regex]() -> Int:
@@ -825,17 +810,18 @@ def _captured_fixed_width_alternation_index[regex: Regex]() -> Int:
         regex, regex.capture_root
     ]():
         return regex.capture_root
-    comptime if root.isa[SequenceNode]():
-        comptime sequence = root[SequenceNode]
-        comptime if (
-            sequence.count == 3
-            and regex.nodes[sequence.items[0]].isa[ZeroWidthNode]()
-            and regex.nodes[sequence.items[2]].isa[ZeroWidthNode]()
-            and _is_captured_fixed_width_alternation_node[
-                regex, sequence.items[1]
-            ]()
-        ):
-            return sequence.items[1]
+    comptime __guard root.isa[SequenceNode]() else:
+        return -1
+    comptime sequence = root[SequenceNode]
+    comptime if (
+        sequence.count == 3
+        and regex.nodes[sequence.items[0]].isa[ZeroWidthNode]()
+        and regex.nodes[sequence.items[2]].isa[ZeroWidthNode]()
+        and _is_captured_fixed_width_alternation_node[
+            regex, sequence.items[1]
+        ]()
+    ):
+        return sequence.items[1]
     return -1
 
 
@@ -885,73 +871,65 @@ def _find_captured_fixed_width_alternation[
 def _is_literal_capture_run_alternation[regex: Regex]() -> Bool:
     """Recognize `literal(class+)|...` in the capture-preserving AST."""
     comptime root = regex.nodes[regex.capture_root]
-    comptime if root.isa[OrNode]():
-        comptime alternation = root[OrNode]
-        comptime if alternation.count == 0:
+    comptime __guard root.isa[OrNode]() else:
+        return False
+    comptime alternation = root[OrNode]
+    comptime if alternation.count == 0:
+        return False
+    comptime for option in range(alternation.count):
+        comptime node = regex.nodes[alternation.options[option]]
+        comptime __guard node.isa[SequenceNode]() else:
             return False
-        comptime for option in range(alternation.count):
-            comptime node = regex.nodes[alternation.options[option]]
-            comptime if node.isa[SequenceNode]():
-                comptime sequence = node[SequenceNode]
-                comptime if sequence.count != 2:
-                    return False
-                comptime literal = regex.nodes[sequence.items[0]]
-                comptime capture = regex.nodes[sequence.items[1]]
-                comptime if literal.isa[LiteralNode]() and capture.isa[
-                    CaptureNode
-                ]():
-                    comptime if literal[LiteralNode].value.byte_length() == 0:
-                        return False
-                    comptime repeat_node = regex.nodes[
-                        capture[CaptureNode].child
-                    ]
-                    comptime if repeat_node.isa[RepeatNode]():
-                        comptime repeat = repeat_node[RepeatNode]
-                        comptime if repeat.minimum <= 0:
-                            return False
-                        comptime child = regex.nodes[repeat.child]
-                        comptime if not child.isa[
-                            CharClassNode
-                        ]() and not child.isa[BracketClassNode]():
-                            return False
-                    else:
-                        return False
-                else:
-                    return False
-            else:
-                return False
-        return True
-    return False
+        comptime sequence = node[SequenceNode]
+        comptime if sequence.count != 2:
+            return False
+        comptime literal = regex.nodes[sequence.items[0]]
+        comptime capture = regex.nodes[sequence.items[1]]
+        comptime __guard (
+            literal.isa[LiteralNode]() and capture.isa[CaptureNode]()
+        ) else:
+            return False
+        comptime if literal[LiteralNode].value.byte_length() == 0:
+            return False
+        comptime repeat_node = regex.nodes[capture[CaptureNode].child]
+        comptime __guard repeat_node.isa[RepeatNode]() else:
+            return False
+        comptime repeat = repeat_node[RepeatNode]
+        comptime if repeat.minimum <= 0:
+            return False
+        comptime child = regex.nodes[repeat.child]
+        comptime if not child.isa[CharClassNode]() and not child.isa[
+            BracketClassNode
+        ]():
+            return False
+    return True
 
 
 def _is_captured_literal_run_alternation[regex: Regex]() -> Bool:
     """Recognize `(literal+)|(literal+)|...` capture alternatives."""
     comptime root = regex.nodes[regex.capture_root]
-    comptime if root.isa[OrNode]():
-        comptime alternation = root[OrNode]
-        comptime if alternation.count == 0:
+    comptime __guard root.isa[OrNode]() else:
+        return False
+    comptime alternation = root[OrNode]
+    comptime if alternation.count == 0:
+        return False
+    comptime for option in range(alternation.count):
+        comptime node = regex.nodes[alternation.options[option]]
+        comptime __guard node.isa[CaptureNode]() else:
             return False
-        comptime for option in range(alternation.count):
-            comptime node = regex.nodes[alternation.options[option]]
-            comptime if node.isa[CaptureNode]():
-                comptime capture = node[CaptureNode]
-                comptime repeated = regex.nodes[capture.child]
-                comptime if repeated.isa[RepeatNode]():
-                    comptime repeat = repeated[RepeatNode]
-                    comptime if repeat.minimum <= 0:
-                        return False
-                    comptime child = regex.nodes[repeat.child]
-                    comptime if child.isa[LiteralNode]():
-                        comptime if child[LiteralNode].value.byte_length() != 1:
-                            return False
-                    else:
-                        return False
-                else:
-                    return False
-            else:
-                return False
-        return True
-    return False
+        comptime capture = node[CaptureNode]
+        comptime repeated = regex.nodes[capture.child]
+        comptime __guard repeated.isa[RepeatNode]() else:
+            return False
+        comptime repeat = repeated[RepeatNode]
+        comptime if repeat.minimum <= 0:
+            return False
+        comptime child = regex.nodes[repeat.child]
+        comptime __guard child.isa[LiteralNode]() else:
+            return False
+        comptime if child[LiteralNode].value.byte_length() != 1:
+            return False
+    return True
 
 
 def _captured_literal_run_group_map[regex: Regex]() -> StaticTuple[Int, 256]:

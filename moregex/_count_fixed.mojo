@@ -68,17 +68,54 @@ def _match_simple_prefix_to[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](text: StringSpan, end: Int, minimum_start: Int) -> Optional[_MatchSpan]:
     """Match a one-byte sequence prefix backwards with repeat giveback."""
-    comptime if item < 0:
+    comptime __guard item >= 0 else:
         return _MatchSpan(end, end)
-    else:
-        comptime node_index = sequence.items[item]
-        comptime node = nodes[node_index]
-        comptime if node.isa[RepeatNode]():
-            comptime repeat = node[RepeatNode]
-            var count = 0
-            var start = end
-            comptime width = CLASS_TAIL_SIMD_WIDTH
-            if end - minimum_start < width + 8:
+    comptime node_index = sequence.items[item]
+    comptime node = nodes[node_index]
+    comptime if node.isa[RepeatNode]():
+        comptime repeat = node[RepeatNode]
+        var count = 0
+        var start = end
+        comptime width = CLASS_TAIL_SIMD_WIDTH
+        if end - minimum_start < width + 8:
+            while start > minimum_start:
+                comptime if repeat.maximum >= 0:
+                    if count >= repeat.maximum:
+                        break
+                if not _one_byte_atom_accepts[nodes, repeat.child](
+                    Int(text.as_bytes()[start - 1])
+                ):
+                    break
+                start -= 1
+                count += 1
+        else:
+            # Probe before paying SIMD setup; common short runs retain the
+            # original scalar loop above.
+            while start > minimum_start and count < 8:
+                comptime if repeat.maximum >= 0:
+                    if count >= repeat.maximum:
+                        break
+                if not _one_byte_atom_accepts[nodes, repeat.child](
+                    Int(text.as_bytes()[start - 1])
+                ):
+                    break
+                start -= 1
+                count += 1
+
+            if count == 8:
+                while start - width >= minimum_start:
+                    comptime if repeat.maximum >= 0:
+                        if count + width > repeat.maximum:
+                            break
+                    if not all(
+                        _fixed_node_mask[nodes, repeat.child, width, 0](
+                            text, start - width
+                        )
+                    ):
+                        break
+                    start -= width
+                    count += width
+
                 while start > minimum_start:
                     comptime if repeat.maximum >= 0:
                         if count >= repeat.maximum:
@@ -89,83 +126,45 @@ def _match_simple_prefix_to[
                         break
                     start -= 1
                     count += 1
-            else:
-                # Probe before paying SIMD setup; common short runs retain the
-                # original scalar loop above.
-                while start > minimum_start and count < 8:
-                    comptime if repeat.maximum >= 0:
-                        if count >= repeat.maximum:
-                            break
-                    if not _one_byte_atom_accepts[nodes, repeat.child](
-                        Int(text.as_bytes()[start - 1])
-                    ):
-                        break
-                    start -= 1
-                    count += 1
 
-                if count == 8:
-                    while start - width >= minimum_start:
-                        comptime if repeat.maximum >= 0:
-                            if count + width > repeat.maximum:
-                                break
-                        if not all(
-                            _fixed_node_mask[nodes, repeat.child, width, 0](
-                                text, start - width
-                            )
-                        ):
-                            break
-                        start -= width
-                        count += width
-
-                    while start > minimum_start:
-                        comptime if repeat.maximum >= 0:
-                            if count >= repeat.maximum:
-                                break
-                        if not _one_byte_atom_accepts[nodes, repeat.child](
-                            Int(text.as_bytes()[start - 1])
-                        ):
-                            break
-                        start -= 1
-                        count += 1
-
-            while count >= repeat.minimum:
-                var prefix = _match_simple_prefix_to[nodes, sequence, item - 1](
-                    text, start, minimum_start
-                )
-                if prefix:
-                    return prefix^
-                start += 1
-                count -= 1
-            return None
-        elif _is_one_byte_class_node[nodes, node_index]():
-            if end <= minimum_start or not _one_byte_atom_accepts[
-                nodes, node_index
-            ](Int(text.as_bytes()[end - 1])):
-                return None
-            return _match_simple_prefix_to[nodes, sequence, item - 1](
-                text, end - 1, minimum_start
-            )
-        elif node.isa[LiteralNode]():
-            comptime literal = node[LiteralNode]
-            comptime width = literal.value.byte_length()
-            var start = end - width
-            if start < minimum_start or not _match_literal[literal.value](
-                text, start
-            ):
-                return None
-            return _match_simple_prefix_to[nodes, sequence, item - 1](
+        while count >= repeat.minimum:
+            var prefix = _match_simple_prefix_to[nodes, sequence, item - 1](
                 text, start, minimum_start
             )
-        elif node.isa[ZeroWidthNode]():
-            if not _zero_width_matches(node[ZeroWidthNode].kind, text, end):
-                return None
-            return _match_simple_prefix_to[nodes, sequence, item - 1](
-                text, end, minimum_start
-            )
-        else:
-            return _match_simple_prefix_to[nodes, sequence, item - 1](
-                text, end, minimum_start
-            )
+            if prefix:
+                return prefix^
+            start += 1
+            count -= 1
+        return None
+    elif _is_one_byte_class_node[nodes, node_index]():
+        if end <= minimum_start or not _one_byte_atom_accepts[
+            nodes, node_index
+        ](Int(text.as_bytes()[end - 1])):
+            return None
+        return _match_simple_prefix_to[nodes, sequence, item - 1](
+            text, end - 1, minimum_start
+        )
+    elif node.isa[LiteralNode]():
+        comptime literal = node[LiteralNode]
+        comptime width = literal.value.byte_length()
+        var start = end - width
+        if start < minimum_start or not _match_literal[literal.value](
+            text, start
+        ):
+            return None
+        return _match_simple_prefix_to[nodes, sequence, item - 1](
+            text, start, minimum_start
+        )
+    elif node.isa[ZeroWidthNode]():
+        if not _zero_width_matches(node[ZeroWidthNode].kind, text, end):
+            return None
+        return _match_simple_prefix_to[nodes, sequence, item - 1](
+            text, end, minimum_start
+        )
+    else:
+        return _match_simple_prefix_to[nodes, sequence, item - 1](
+            text, end, minimum_start
+        )
 
 
 @inline(.always)
@@ -173,18 +172,16 @@ def _simple_anchor_is_disjoint[
     nodes: List[RegexNode], sequence: SequenceNode, literal_item: Int
 ]() -> Bool:
     """Prove a greedy prefix repeat cannot consume the anchor's first byte."""
-    comptime if literal_item == 0:
+    comptime __guard literal_item != 0 else:
         return True
-    else:
-        comptime previous = nodes[sequence.items[literal_item - 1]]
-        comptime if not previous.isa[RepeatNode]():
-            return True
-        else:
-            comptime repeat = previous[RepeatNode]
-            comptime literal = nodes[sequence.items[literal_item]][LiteralNode]
-            return not _one_byte_atom_accepts[nodes, repeat.child](
-                Int(literal.value.as_bytes()[0])
-            )
+    comptime previous = nodes[sequence.items[literal_item - 1]]
+    comptime __guard previous.isa[RepeatNode]() else:
+        return True
+    comptime repeat = previous[RepeatNode]
+    comptime literal = nodes[sequence.items[literal_item]][LiteralNode]
+    return not _one_byte_atom_accepts[nodes, repeat.child](
+        Int(literal.value.as_bytes()[0])
+    )
 
 
 @inline(.always)
