@@ -16,7 +16,7 @@ from ._common import (
 )
 
 
-@always_inline
+@inline(.always)
 def _one_byte_run_end[
     nodes: List[RegexNode], child: Int
 ](text: StringSpan, start: Int, limit: Int) -> Int:
@@ -40,7 +40,7 @@ def _one_byte_run_end[
     return offset
 
 
-@always_inline
+@inline(.always)
 def _contains_one_byte_node[
     nodes: List[RegexNode], node_index: Int
 ](text: StringSpan) -> Bool:
@@ -48,7 +48,7 @@ def _contains_one_byte_node[
     var length = text.byte_length()
     var offset = 0
 
-    @always_inline
+    @inline(.always)
     def scan[width: Int](block_start: Int) {imm text} -> Bool:
         return any(
             _fixed_node_mask[nodes, node_index, width, 0](text, block_start)
@@ -65,7 +65,7 @@ def _contains_one_byte_node[
     return False
 
 
-@always_inline
+@inline(.always)
 def _search_one_byte_run[
     nodes: List[RegexNode], child: Int, minimum: Int
 ](text: StringSpan) -> Bool:

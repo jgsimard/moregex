@@ -23,7 +23,7 @@ from ._common import (
 )
 
 
-@always_inline
+@inline(.always)
 def _utf8_bracket_accepts[node: BracketClassNode](value: Int) -> Bool:
     """Test a byte class with a compact lookup for fragmented ranges."""
     comptime if node.count >= 3:
@@ -333,7 +333,7 @@ def _utf8_two_byte_suffix_masks[
     return masks
 
 
-@always_inline
+@inline(.always)
 def _utf8_ascii_class_mask[
     nodes: List[RegexNode], node_index: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -364,7 +364,7 @@ def _has_prior_sequence_prefix[
     return False
 
 
-@always_inline
+@inline(.always)
 def _utf8_sequence_suffix_width[
     nodes: List[RegexNode], node_index: Int
 ](bytes: Span[Byte, _], start: Int) -> Int:
@@ -381,7 +381,7 @@ def _utf8_sequence_suffix_width[
     return sequence.count
 
 
-@always_inline
+@inline(.always)
 def _utf8_byte_class_width[
     nodes: List[RegexNode], node_index: Int
 ](bytes: Span[Byte, _], start: Int) -> Int:
@@ -447,7 +447,7 @@ def _utf8_byte_class_width[
     return 0
 
 
-@always_inline
+@inline(.always)
 def _count_utf8_byte_class_repeat[
     regex: Regex, sum_spans: Bool
 ](bytes: Span[Byte, _]) -> Int:
@@ -514,7 +514,7 @@ def _utf8_infix_max_literal_length[regex: Regex]() -> Int:
     return maximum
 
 
-@always_inline
+@inline(.always)
 def _match_utf8_class_literal_infix_option_at[
     regex: Regex, option_index: Int
 ](text: StringSpan, candidate: Int, search_start: Int) -> Optional[
@@ -550,7 +550,7 @@ def _match_utf8_class_literal_infix_option_at[
     return None
 
 
-@always_inline
+@inline(.always)
 def _previous_utf8_class_width[
     nodes: List[RegexNode], class_index: Int
 ](bytes: Span[Byte, _], end: Int, minimum: Int) -> Int:
@@ -564,7 +564,7 @@ def _previous_utf8_class_width[
     return 0
 
 
-@always_inline
+@inline(.always)
 def _exact_utf8_class_sequence_at_separator[
     regex: Regex
 ](bytes: Span[Byte, _], separator: Int, minimum_start: Int) -> Tuple[Int, Int]:
@@ -620,7 +620,7 @@ def _exact_utf8_separator_extents[regex: Regex]() -> Tuple[Int, Int]:
     return (prefix, suffix)
 
 
-@always_inline
+@inline(.always)
 def _exact_utf8_ascii_separator_mask[
     regex: Regex, width: Int
 ](bytes: Span[Byte, _], separator: Int) -> SIMD[.bool, width]:
@@ -661,7 +661,7 @@ def _exact_utf8_ascii_separator_mask[
     return matched
 
 
-@always_inline
+@inline(.always)
 def _count_exact_utf8_class_sequence[
     regex: Regex, sum_spans: Bool
 ](bytes: Span[Byte, _]) -> Int:
@@ -730,7 +730,7 @@ def _count_exact_utf8_class_sequence[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_utf8_class_separated_literal_infix[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -798,7 +798,7 @@ def _count_utf8_class_separated_literal_infix[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_utf8_class_literal_infix_alternation[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:

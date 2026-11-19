@@ -11,7 +11,7 @@ from ._common import (
 )
 
 
-@always_inline
+@inline(.always)
 def _search_static_literal[pattern: StaticString](text: StringSpan) -> Bool:
     """SIMD-scan sparse first-byte candidates for a static literal."""
     comptime literal_length = pattern.byte_length()
@@ -44,7 +44,7 @@ def _search_static_literal[pattern: StaticString](text: StringSpan) -> Bool:
     return text.find(pattern, offset).or_else(-1) >= 0
 
 
-@always_inline
+@inline(.always)
 def _count_static_literal[
     pattern: StaticString, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -75,7 +75,7 @@ def _literal_has_unique_first_byte[value: String]() -> Bool:
         return True
 
 
-@always_inline
+@inline(.always)
 def _matches_short_literal_simd[
     pattern: StaticString
 ](text: StringSpan, start: Int) -> Bool:
@@ -100,7 +100,7 @@ def _matches_short_literal_simd[
     return all(last.eq(expected_last))
 
 
-@always_inline
+@inline(.always)
 def _count_short_literal_simd_candidates[
     pattern: StaticString, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -144,7 +144,7 @@ def _literal_unique_high_byte_offset[value: String]() -> Int:
     return -1
 
 
-@always_inline
+@inline(.always)
 def _count_unique_anchor_literal[
     value: String, anchor_offset: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -215,7 +215,7 @@ def _count_unique_anchor_literal[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_reverse_unbordered_literal[
     value: String, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -250,7 +250,7 @@ def _count_reverse_unbordered_literal[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_edge_prefiltered_literal[
     value: String, sum_spans: Bool
 ](text: StringSpan) -> Int:

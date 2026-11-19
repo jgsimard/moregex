@@ -39,12 +39,12 @@ from ._ast import (
 from ._normalization import _append_range, _normalize_regex_ast
 
 
-@always_inline
+@inline(.always)
 def _is_repeat_operator(ch: Int) -> Bool:
     return ch == ord("*") or ch == ord("+") or ch == ord("?") or ch == ord("{")
 
 
-@always_inline
+@inline(.always)
 def _escaped_class_kind(ch: Int) -> Int:
     if ch == ord("w"):
         return CHAR_ASCII_WORD
@@ -131,21 +131,21 @@ struct _Parser(Movable):
         self.nodes = existing.nodes^
         self.capture_count = existing.capture_count
 
-    @always_inline
+    @inline(.always)
     def peek_byte(self) -> Int:
         """Return the next pattern byte, or -1 at end of input."""
         if self.pos >= self.pattern.byte_length():
             return -1
         return Int(self.pattern.as_bytes()[self.pos])
 
-    @always_inline
+    @inline(.always)
     def peek_byte_offset(self, offset: Int) -> Int:
         var index = self.pos + offset
         if index >= self.pattern.byte_length():
             return -1
         return Int(self.pattern.as_bytes()[index])
 
-    @always_inline
+    @inline(.always)
     def codepoint_width_at(self, index: Int) -> Int:
         var first = Int(self.pattern.as_bytes()[index])
         var width = 1
@@ -173,7 +173,7 @@ struct _Parser(Movable):
         self.pos += width
         return self.pattern[byte = start : start + width]
 
-    @always_inline
+    @inline(.always)
     def advance_byte(mut self) -> Int:
         var value = self.peek_byte()
         if value >= 0:
@@ -184,7 +184,7 @@ struct _Parser(Movable):
         self.nodes.append(node^)
         return len(self.nodes) - 1
 
-    @always_inline
+    @inline(.always)
     def flags(self) -> _ParserFlags:
         return _ParserFlags(
             self.case_insensitive,
@@ -192,13 +192,13 @@ struct _Parser(Movable):
             self.multi_line,
         )
 
-    @always_inline
+    @inline(.always)
     def restore_flags(mut self, flags: _ParserFlags):
         self.case_insensitive = flags.case_insensitive
         self.dot_all = flags.dot_all
         self.multi_line = flags.multi_line
 
-    @always_inline
+    @inline(.always)
     def finish_group(mut self) raises:
         if self.peek_byte() != ord(")"):
             raise Error("expected closing parenthesis")

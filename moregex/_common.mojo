@@ -28,7 +28,7 @@ from ._simd import (
 )
 
 
-@always_inline
+@inline(.always)
 def _bracket_accepts[node: BracketClassNode](value: Int) -> Bool:
     comptime for item in range(node.count):
         if node.lows[item] <= value <= node.highs[item]:
@@ -46,27 +46,27 @@ struct _MatchResult(Copyable, UnsafeSingleNicheable):
 
     var _encoded_length: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, consumed: Int):
         comptime assert size_of[Optional[Self]]() == size_of[Int]()
         self._encoded_length = consumed + 1
 
-    @always_inline
+    @inline(.always)
     def consumed(self) -> Int:
         return self._encoded_length - 1
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
         memory.unsafe_bitcast[Int]().unsafe_store(0)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
         return memory.unsafe_bitcast[Int]()[] == 0
 
 
-@always_inline
+@inline(.always)
 def _match_literal[
     value: String
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:
@@ -80,12 +80,12 @@ def _match_literal[
     return _MatchResult(value.byte_length())
 
 
-@always_inline
+@inline(.always)
 def _is_ascii_digit(value: Int) -> Bool:
     return ord("0") <= value <= ord("9")
 
 
-@always_inline
+@inline(.always)
 def _is_ascii_word(value: Int) -> Bool:
     var folded = value | 0x20
     return (
@@ -95,7 +95,7 @@ def _is_ascii_word(value: Int) -> Bool:
     )
 
 
-@always_inline
+@inline(.always)
 def _zero_width_matches(kind: Int, text: StringSpan, position: Int) -> Bool:
     """Evaluate a standard zero-width assertion at an input position."""
     if kind == ASSERT_INPUT_START:
@@ -121,7 +121,7 @@ def _zero_width_matches(kind: Int, text: StringSpan, position: Int) -> Bool:
     return boundary if kind == ASSERT_WORD_BOUNDARY else not boundary
 
 
-@always_inline
+@inline(.always)
 def _runtime_class_accepts(kind: Int, value: Int) -> Bool:
     """Evaluate a byte-oriented character class selected at runtime."""
     if kind == CHAR_BYTE_DOT:
@@ -141,7 +141,7 @@ def _runtime_class_accepts(kind: Int, value: Int) -> Bool:
     return kind == CHAR_BYTE_DOTALL
 
 
-@always_inline
+@inline(.always)
 def _accepts_class[kind: Int](value: Int) -> Bool:
     """Evaluate a compile-time-selected byte-oriented character class."""
     comptime if kind == CHAR_UNICODE_DOT or kind == CHAR_UNICODE_DOTALL:
@@ -151,7 +151,7 @@ def _accepts_class[kind: Int](value: Int) -> Bool:
     return _runtime_class_accepts(kind, value)
 
 
-@always_inline
+@inline(.always)
 def _utf8_codepoint_width(text: StringSpan, start: Int) -> Int:
     """Return the UTF-8 code-point width at a leading byte, or zero."""
     if start >= text.byte_length():
@@ -171,7 +171,7 @@ def _utf8_codepoint_width(text: StringSpan, start: Int) -> Int:
     return 0
 
 
-@always_inline
+@inline(.always)
 def _match_class[
     kind: Int
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:
@@ -190,7 +190,7 @@ def _match_class[
     return None
 
 
-@always_inline
+@inline(.always)
 def _byte_range_mask[
     low: Int, high: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -199,7 +199,7 @@ def _byte_range_mask[
     )
 
 
-@always_inline
+@inline(.always)
 def _class_mask[
     kind: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -237,7 +237,7 @@ def _class_mask[
         return SIMD[.bool, width](fill=True)
 
 
-@always_inline
+@inline(.always)
 def _matches_class_run[kind: Int](text: StringSpan) -> Bool:
     var length = text.byte_length()
     if length == 0:
@@ -261,7 +261,7 @@ def _matches_class_run[kind: Int](text: StringSpan) -> Bool:
     return True
 
 
-@always_inline
+@inline(.always)
 def _match_checksum[sum_spans: Bool](consumed: Int) -> Int:
     comptime if sum_spans:
         return consumed

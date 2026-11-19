@@ -81,7 +81,7 @@ def _is_bracket_infix_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _bracket_infix_block_matches[
     nodes: List[RegexNode], root: RegexNode, width: Int, partial: Bool
 ](text: StringSpan, offset: Int, count: Int) -> Bool:
@@ -130,7 +130,7 @@ def _bracket_infix_block_matches[
     return any(candidates)
 
 
-@always_inline
+@inline(.always)
 def _search_bracket_infix[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan) -> Bool:
@@ -245,7 +245,7 @@ def _is_literal_dot_infix[nodes: List[RegexNode], root: RegexNode]() -> Bool:
                 )
 
 
-@always_inline
+@inline(.always)
 def _search_literal_dot_infix[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan) -> Bool:
@@ -278,7 +278,7 @@ def _search_literal_dot_infix[
     return False
 
 
-@always_inline
+@inline(.always)
 def _prefixed_infix_prefix_matches[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan, delimiter: Int) -> Bool:
@@ -299,7 +299,7 @@ def _prefixed_infix_prefix_matches[
     return False
 
 
-@always_inline
+@inline(.always)
 def _prefixed_infix_matches_at[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan, delimiter: Int) -> Bool:
@@ -320,7 +320,7 @@ def _prefixed_infix_matches_at[
     return _prefixed_infix_prefix_matches[nodes, root](text, delimiter)
 
 
-@always_inline
+@inline(.always)
 def _prefixed_infix_block_matches[
     nodes: List[RegexNode], root: RegexNode, width: Int
 ](text: StringSpan, offset: Int) -> Bool:
@@ -350,7 +350,7 @@ def _prefixed_infix_block_matches[
     return False
 
 
-@always_inline
+@inline(.always)
 def _search_prefixed_infix[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan) -> Bool:
@@ -363,7 +363,7 @@ def _search_prefixed_infix[
     if candidate_count <= 0:
         return False
 
-    @always_inline
+    @inline(.always)
     def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
         comptime if width == 0:
             for offset in range(start, end):
@@ -382,7 +382,7 @@ def _search_prefixed_infix[
     )
 
 
-@always_inline
+@inline(.always)
 def _grep_prefixed_infix[
     nodes: List[RegexNode], root: RegexNode
 ](text: String) -> Int:
@@ -442,7 +442,7 @@ def _all_infix_options[nodes: List[RegexNode], alternation: OrNode]() -> Bool:
     return True
 
 
-@always_inline
+@inline(.always)
 def _search_infix_alternation[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan) -> Bool:
@@ -599,7 +599,7 @@ def _node_starts_only_with_ascii_word[
             return False
 
 
-@always_inline
+@inline(.always)
 def _search_long_word[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan) -> Bool:
@@ -609,7 +609,7 @@ def _search_long_word[
     return _search_one_byte_run[nodes, repeat.child, repeat.minimum](text)
 
 
-@always_inline
+@inline(.always)
 def _count_long_word[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     """Count complete ASCII word runs that meet the minimum length."""
     comptime root = regex.nodes[regex.root][SequenceNode]
@@ -651,7 +651,7 @@ def _count_long_word[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_word_run_literal_suffix[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -684,7 +684,7 @@ def _count_word_run_literal_suffix[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_word_boundary_wrapped[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -776,7 +776,7 @@ def _count_word_boundary_wrapped[
     return total
 
 
-@always_inline
+@inline(.always)
 def _search_word_boundary_wrapped[regex: Regex](text: StringSpan) -> Bool:
     """Search a boundary-wrapped expression only at actual word edges."""
     var length = text.byte_length()
@@ -870,7 +870,7 @@ def _is_numeric_date_search[nodes: List[RegexNode], root: RegexNode]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _numeric_date_matches_at[
     separator_byte: Int
 ](text: StringSpan, first: Int) -> Bool:
@@ -901,7 +901,7 @@ def _numeric_date_matches_at[
     return False
 
 
-@always_inline
+@inline(.always)
 def _numeric_date_block_matches[
     separator_byte: Int, width: Int
 ](text: StringSpan, offset: Int) -> Bool:
@@ -921,7 +921,7 @@ def _numeric_date_block_matches[
     return False
 
 
-@always_inline
+@inline(.always)
 def _search_numeric_date[
     nodes: List[RegexNode], root: RegexNode
 ](text: StringSpan) -> Bool:
@@ -934,7 +934,7 @@ def _search_numeric_date[
         return False
     var candidate_count = length - 5
 
-    @always_inline
+    @inline(.always)
     def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
         comptime if width == 0:
             for offset in range(start, end):

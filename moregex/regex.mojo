@@ -33,43 +33,43 @@ from ._line_kernels import (
 from ._search import _grep_prefixed_infix, _is_prefixed_infix_search
 
 
-@always_inline
+@inline(.always)
 def count_spans[regex: Regex](text: String) -> Int:
     """Sum byte lengths of leftmost, non-overlapping matches in `text`."""
     return _count_impl[regex, True](text[byte = 0 : text.byte_length()])
 
 
-@always_inline
+@inline(.always)
 def count_spans_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of `count_spans`."""
     return _count_impl[regex, True](text)
 
 
-@always_inline
+@inline(.always)
 def matched_bytes[regex: Regex](text: String) -> Int:
     """Sum byte lengths of leftmost, non-overlapping matches."""
     return count_spans[regex](text)
 
 
-@always_inline
+@inline(.always)
 def matched_bytes_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of matched_bytes."""
     return count_spans_span[regex](text)
 
 
-@always_inline
+@inline(.always)
 def count[regex: Regex](text: String) -> Int:
     """Count leftmost, non-overlapping matches in `text`."""
     return _count_impl[regex, False](text[byte = 0 : text.byte_length()])
 
 
-@always_inline
+@inline(.always)
 def count_span[regex: Regex](text: StringSpan) -> Int:
     """Borrowed-input version of `count`."""
     return _count_impl[regex, False](text)
 
 
-@always_inline
+@inline(.always)
 def count_captures_span[regex: Regex](text: StringSpan) raises -> Int:
     """Count participating groups in all non-overlapping matches."""
     comptime if _is_anchored_lazy_capture_record[regex]():
@@ -122,13 +122,13 @@ def count_captures_span[regex: Regex](text: StringSpan) raises -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def count_captures[regex: Regex](text: String) raises -> Int:
     """Count participating groups in all non-overlapping matches."""
     return count_captures_span[regex](text[byte = 0 : text.byte_length()])
 
 
-@always_inline
+@inline(.always)
 def _grep_search_lines[regex: Regex](text: String) -> Int:
     """Apply Boolean search to each input line, excluding terminal LF."""
     var length = text.byte_length()
@@ -147,7 +147,7 @@ def _grep_search_lines[regex: Regex](text: String) -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def _grep_capture_lines[regex: Regex](text: String) raises -> Int:
     """Count capture participation per line, excluding terminal LF."""
     var length = text.byte_length()
@@ -166,7 +166,7 @@ def _grep_capture_lines[regex: Regex](text: String) raises -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def count_matching_lines[regex: Regex](text: String) -> Int:
     """Count input lines containing a match."""
     comptime lazy_literal = _anchored_lazy_literal_plan[
@@ -183,7 +183,7 @@ def count_matching_lines[regex: Regex](text: String) -> Int:
     return _grep_search_lines[regex](text)
 
 
-@always_inline
+@inline(.always)
 def count_line_captures[regex: Regex](text: String) raises -> Int:
     """Count capture participation after matching each input line."""
     comptime if (
@@ -205,13 +205,13 @@ def count_line_captures[regex: Regex](text: String) raises -> Int:
     return _grep_capture_lines[regex](text)
 
 
-@always_inline
+@inline(.always)
 def grep[regex: Regex](text: String) -> Int:
     """Compatibility alias for count_matching_lines."""
     return count_matching_lines[regex](text)
 
 
-@always_inline
+@inline(.always)
 def grep_captures[regex: Regex](text: String) raises -> Int:
     """Compatibility alias for count_line_captures."""
     return count_line_captures[regex](text)

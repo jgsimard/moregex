@@ -19,7 +19,7 @@ from ._ast_matcher import _match_node
 from ._delimited import _literal_delimited_plan, _matches_literal_delimited
 
 
-@always_inline
+@inline(.always)
 def _matches_span_impl[regex: Regex](text: StringSpan) -> Bool:
     comptime delimited = _literal_delimited_plan[regex]()
     comptime if delimited:
@@ -47,7 +47,7 @@ def _matches_span_impl[regex: Regex](text: StringSpan) -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def matches_span[regex: Regex](text: StringSpan) -> Bool:
     """Return whether borrowed text is a full match."""
     comptime root = regex.nodes[regex.root]
@@ -60,7 +60,7 @@ def matches_span[regex: Regex](text: StringSpan) -> Bool:
     return _matches_span_impl[regex](text)
 
 
-@always_inline
+@inline(.always)
 def matches[regex: Regex](text: String) -> Bool:
     """Return whether text is a full match for a compile-time regex."""
     comptime root = regex.nodes[regex.root]

@@ -20,7 +20,7 @@ from ._syntax import Regex
 from ._byte_scan import _contains_one_byte_node
 
 
-@always_inline
+@inline(.always)
 def _scan_generic[
     regex: Regex, sum_spans: Bool, stop_after_first: Bool
 ](text: StringSpan) -> Int:
@@ -65,7 +65,7 @@ def _scan_generic[
     var end = text.byte_length() - plan.minimum_width + 1
     comptime if plan.selective_start:
 
-        @always_inline
+        @inline(.always)
         def scan[
             width: Int
         ](block_start: Int) {imm text, mut total, mut next_start} -> Bool:

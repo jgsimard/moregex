@@ -165,7 +165,7 @@ from ._utf8_runs import (
 )
 
 
-@always_inline
+@inline(.always)
 def _search_planned[regex: Regex](text: StringSpan) -> Bool:
     comptime delimited = _literal_delimited_plan[regex]()
     comptime if delimited:
@@ -272,7 +272,7 @@ def _search_planned[regex: Regex](text: StringSpan) -> Bool:
     return _scan_generic[regex, False, True](text) > 0
 
 
-@always_inline
+@inline(.always)
 def _search_span_impl[regex: Regex](text: StringSpan) -> Bool:
     comptime root = regex.nodes[regex.root]
     comptime if root.isa[LiteralNode]():
@@ -285,19 +285,19 @@ def _search_span_impl[regex: Regex](text: StringSpan) -> Bool:
     return _search_planned[regex](text)
 
 
-@always_inline
+@inline(.always)
 def search[regex: Regex](text: String) -> Bool:
     """Return whether compile-time `regex` matches anywhere in `text`."""
     return _search_span_impl[regex](text[byte = 0 : text.byte_length()])
 
 
-@always_inline
+@inline(.always)
 def search_span[regex: Regex](text: StringSpan) -> Bool:
     """Search a borrowed string span without allocation."""
     return _search_span_impl[regex](text)
 
 
-@always_inline
+@inline(.always)
 def _count_nfa[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     """Count ordered leftmost, non-overlapping Thompson-NFA matches."""
     comptime root = regex.nodes[regex.root]
@@ -321,7 +321,7 @@ def _count_nfa[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_planned[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     comptime delimited = _literal_delimited_plan[regex]()
     comptime if delimited:
@@ -546,7 +546,7 @@ def _count_planned[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     return _scan_generic[regex, sum_spans, False](text)
 
 
-@always_inline
+@inline(.always)
 def _count_literal_root[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     comptime literal = regex.nodes[regex.root][LiteralNode]
     comptime literal_length = literal.value.byte_length()
@@ -602,7 +602,7 @@ def _count_literal_root[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_impl[regex: Regex, sum_spans: Bool](text: StringSpan) -> Int:
     """Compute a match count or matched-byte checksum."""
     comptime root = regex.nodes[regex.root]

@@ -45,7 +45,7 @@ struct RegexMatch[capture_count: Int](ImplicitlyCopyable):
 
     var _offsets: _CaptureOffsets[Self.capture_count]
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         starts: StaticTuple[Int, Self.capture_count + 1],
@@ -53,15 +53,15 @@ struct RegexMatch[capture_count: Int](ImplicitlyCopyable):
     ):
         self._offsets = _CaptureOffsets[Self.capture_count](starts, ends)
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, offsets: _CaptureOffsets[Self.capture_count]):
         self._offsets = offsets
 
-    @always_inline
+    @inline(.always)
     def group_count(self) -> Int:
         return Self.capture_count
 
-    @always_inline
+    @inline(.always)
     def _check_group(self, group: Int) raises:
         if group < 0 or group > Self.capture_count:
             raise Error(
@@ -70,19 +70,19 @@ struct RegexMatch[capture_count: Int](ImplicitlyCopyable):
                 )
             )
 
-    @always_inline
+    @inline(.always)
     def start(self, group: Int = 0) raises -> Int:
         """Return a group's byte start, or -1 when it did not participate."""
         self._check_group(group)
         return self._offsets.starts[group]
 
-    @always_inline
+    @inline(.always)
     def end(self, group: Int = 0) raises -> Int:
         """Return a group's byte end, or -1 when it did not participate."""
         self._check_group(group)
         return self._offsets.ends[group]
 
-    @always_inline
+    @inline(.always)
     def span(self, group: Int = 0) raises -> Tuple[Int, Int]:
         """Return a group's half-open byte range."""
         self._check_group(group)
@@ -160,7 +160,7 @@ def _capture_maximum[nodes: List[RegexNode], capture_child: Int]() -> Int:
     return 1
 
 
-@always_inline
+@inline(.always)
 def _byte_capture_atom_accepts[
     nodes: List[RegexNode], node_index: Int
 ](value: Int) -> Bool:
@@ -362,7 +362,7 @@ def _is_anchored_lazy_capture_record[regex: Regex]() -> Bool:
                         )
 
 
-@always_inline
+@inline(.always)
 def _match_capture_child_or_node[
     nodes: List[RegexNode], node_index: Int
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:
@@ -372,7 +372,7 @@ def _match_capture_child_or_node[
     return _match_node[nodes, node_index](text, start)
 
 
-@always_inline
+@inline(.always)
 def _matches_anchored_lazy_capture_record[
     regex: Regex
 ](text: StringSpan) -> Bool:
@@ -426,7 +426,7 @@ def _matches_anchored_lazy_capture_record[
     return False
 
 
-@always_inline
+@inline(.always)
 def _find_delimited_capture_record[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[
@@ -573,7 +573,7 @@ def _is_fixed_capture_sequence[regex: Regex]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _fixed_capture_sequence_match_at[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
@@ -617,7 +617,7 @@ def _fixed_capture_sequence_match_at[
     return RegexMatch[regex.capture_count](starts, ends)
 
 
-@always_inline
+@inline(.always)
 def _find_fixed_capture_sequence[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[
@@ -743,7 +743,7 @@ def _is_delimited_capture_record_with_optional_tail[regex: Regex]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _find_delimited_capture_record_with_optional_tail[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[
@@ -839,7 +839,7 @@ def _captured_fixed_width_alternation_index[regex: Regex]() -> Int:
     return -1
 
 
-@always_inline
+@inline(.always)
 def _find_captured_fixed_width_alternation[
     regex: Regex, alternation_index: Int
 ](text: StringSpan, search_start: Int) -> Optional[
@@ -968,7 +968,7 @@ def _captured_literal_run_group_map[regex: Regex]() -> StaticTuple[Int, 256]:
     return groups
 
 
-@always_inline
+@inline(.always)
 def _find_captured_literal_run_alternation[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
@@ -1016,7 +1016,7 @@ def _find_captured_literal_run_alternation[
     return None
 
 
-@always_inline
+@inline(.always)
 def _literal_capture_run_match_at[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
@@ -1073,7 +1073,7 @@ def _literal_capture_prefix_max_width[regex: Regex]() -> Int:
     return maximum
 
 
-@always_inline
+@inline(.always)
 def _find_literal_capture_run_alternation[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[RegexMatch[regex.capture_count]]:
@@ -1193,7 +1193,7 @@ def _has_leading_literal_prefilter[regex: Regex]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
     """Skip directly to a required literal at the match's leading edge."""
     comptime root = regex.nodes[regex.root]
@@ -1224,7 +1224,7 @@ def _prefilter_start[regex: Regex](text: StringSpan, start: Int) -> Int:
     return start
 
 
-@always_inline
+@inline(.always)
 def find_span[
     regex: Regex
 ](text: StringSpan, start: Int = 0) -> Optional[
@@ -1302,7 +1302,7 @@ def find_span[
         return RegexMatch[regex.capture_count](starts, ends)
 
 
-@always_inline
+@inline(.always)
 def find[
     regex: Regex
 ](text: String, start: Int = 0) -> Optional[RegexMatch[regex.capture_count]]:

@@ -33,7 +33,7 @@ from ._ast_matcher import (
 )
 
 
-@always_inline
+@inline(.always)
 def _count_leading_class_literal[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -88,7 +88,7 @@ def _count_leading_class_literal[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_adjacent_dot_stars_around_literal[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -115,7 +115,7 @@ def _count_adjacent_dot_stars_around_literal[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_greedy_dot_complement_alternation[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -177,7 +177,7 @@ def _count_greedy_dot_complement_alternation[
     return newline_count + tail_length
 
 
-@always_inline
+@inline(.always)
 def _count_prefixed_nested_dot_literal[
     regex: Regex, literal_index: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -213,7 +213,7 @@ def _count_prefixed_nested_dot_literal[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_repeated_lazy_dot_delimiter_suffix[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -278,7 +278,7 @@ def _count_repeated_lazy_dot_delimiter_suffix[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_two_delimiter_bracket_runs[
     regex: Regex, plan: _TwoDelimiterBracketRunsPlan, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -323,7 +323,7 @@ def _count_two_delimiter_bracket_runs[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_multiline_literal_edge_alternation[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:

@@ -57,7 +57,7 @@ struct _RegexExecutionPlan(TrivialRegisterPassable):
     var backtracking_risk: Bool
     var nfa_supported: Bool
 
-    @always_inline
+    @inline(.always)
     def rejects_length(self, length: Int) -> Bool:
         if self.minimum_width > length:
             return True

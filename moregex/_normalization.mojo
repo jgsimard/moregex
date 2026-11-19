@@ -19,7 +19,7 @@ from ._ast import (
 from ._ast_equal import _same_bracket_class
 
 
-@always_inline
+@inline(.always)
 def _append_range(
     mut lows: List[Int], mut highs: List[Int], low: Int, high: Int
 ):

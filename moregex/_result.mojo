@@ -10,11 +10,11 @@ struct _MatchSpan(TrivialRegisterPassable):
     var start: Int
     var end: Int
 
-    @always_inline
+    @inline(.always)
     def consumed(self) -> Int:
         return self.end - self.start
 
-    @always_inline
+    @inline(.always)
     def is_empty(self) -> Bool:
         return self.start == self.end
 
@@ -26,7 +26,7 @@ struct _CaptureOffsets[capture_count: Int](ImplicitlyCopyable):
     var starts: StaticTuple[Int, Self.capture_count + 1]
     var ends: StaticTuple[Int, Self.capture_count + 1]
 
-    @always_inline
+    @inline(.always)
     def match_span(self) -> _MatchSpan:
         return _MatchSpan(self.starts[0], self.ends[0])
 

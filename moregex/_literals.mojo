@@ -38,14 +38,14 @@ def _literal_alternation_first_masks[
     return masks
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_first_accepts[
     masks: StaticTuple[UInt64, 4]
 ](value: Int) -> Bool:
     return masks[value // 64] & (UInt64(1) << UInt64(value % 64)) != 0
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_matches_at[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan, start: Int) -> Bool:
@@ -58,7 +58,7 @@ def _literal_alternation_matches_at[
     return False
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_max_width[
     nodes: List[RegexNode], alternation: OrNode
 ]() -> Int:
@@ -69,7 +69,7 @@ def _literal_alternation_max_width[
     return maximum
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_block_fits[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](length: Int, offset: Int) -> Bool:
@@ -77,7 +77,7 @@ def _literal_alternation_block_fits[
     return offset + width + maximum - 1 <= length
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_block_matches[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> Bool:
@@ -100,7 +100,7 @@ def _literal_alternation_block_matches[
     return False
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_uniform_block_matches[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](text: StringSpan, offset: Int, value: UInt8) -> Bool:
@@ -122,7 +122,7 @@ def _literal_alternation_uniform_block_matches[
     return False
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_full_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
@@ -145,7 +145,7 @@ def _literal_alternation_full_mask[
     return matched
 
 
-@always_inline
+@inline(.always)
 def _alternation_two_position_mask[
     nodes: List[RegexNode],
     alternation: OrNode,
@@ -170,7 +170,7 @@ def _alternation_two_position_mask[
     return matched
 
 
-@always_inline
+@inline(.always)
 def _alternation_three_position_mask[
     nodes: List[RegexNode],
     alternation: OrNode,
@@ -202,7 +202,7 @@ def _alternation_three_position_mask[
     return matched
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_three_byte_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](
@@ -248,7 +248,7 @@ def _alternation_byte[
         return literal.value.as_bytes()[position]
 
 
-@always_inline
+@inline(.always)
 def _alternation_nibble_table[
     nodes: List[RegexNode],
     alternation: OrNode,
@@ -273,7 +273,7 @@ def _alternation_nibble_table[
     return table
 
 
-@always_inline
+@inline(.always)
 def _avx512_nibble_lookup[
     width: Int
 ](table: SIMD[.uint8, width], values: SIMD[.uint8, width]) -> SIMD[
@@ -287,7 +287,7 @@ def _avx512_nibble_lookup[
     ](table, indices)
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_teddy_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](
@@ -308,7 +308,7 @@ def _literal_alternation_teddy_mask[
     )
 
 
-@always_inline
+@inline(.always)
 def _alternation_teddy_position_bits[
     nodes: List[RegexNode],
     alternation: OrNode,
@@ -334,7 +334,7 @@ def _alternation_teddy_position_bits[
     return low & high
 
 
-@always_inline
+@inline(.always)
 def _alternation_teddy3_mask[
     nodes: List[RegexNode], alternation: OrNode, casefold: Bool, width: Int
 ](
@@ -355,7 +355,7 @@ def _alternation_teddy3_mask[
     return pattern_bits.ne(0)
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_candidate_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](text: StringSpan, offset: Int, first_values: SIMD[.uint8, width]) -> SIMD[
@@ -472,7 +472,7 @@ def _literal_alternation_candidate_mask[
         )
 
 
-@always_inline
+@inline(.always)
 def _literal_alternation_match_length_at[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan, start: Int) -> Int:
@@ -490,7 +490,7 @@ def _literal_alternation_match_length_at[
     return 0
 
 
-@always_inline
+@inline(.always)
 def _count_literal_alternation_find[
     nodes: List[RegexNode], alternation: OrNode, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -526,7 +526,7 @@ def _count_literal_alternation_find[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_literal_alternation[
     nodes: List[RegexNode], alternation: OrNode, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -588,7 +588,7 @@ def _count_literal_alternation[
     return total
 
 
-@always_inline
+@inline(.always)
 def _search_literal_alternation[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan) -> Bool:

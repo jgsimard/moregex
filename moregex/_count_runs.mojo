@@ -30,14 +30,14 @@ from ._byte_scan import (
 )
 
 
-@always_inline
+@inline(.always)
 def _count_one_byte_atom[regex: Regex](text: StringSpan) -> Int:
     """Count accepted one-byte atoms with SIMD mask population reductions."""
     var length = text.byte_length()
     var total = 0
     var offset = 0
 
-    @always_inline
+    @inline(.always)
     def scan[
         width: Int
     ](block_start: Int) {imm text, mut total,} -> Bool:
@@ -57,7 +57,7 @@ def _count_one_byte_atom[regex: Regex](text: StringSpan) -> Int:
     return total
 
 
-@always_inline
+@inline(.always)
 def _capitalized_word_phrase_end(text: StringSpan, start: Int) -> Int:
     var length = text.byte_length()
     if start >= length:
@@ -85,7 +85,7 @@ def _capitalized_word_phrase_end(text: StringSpan, start: Int) -> Int:
     return end
 
 
-@always_inline
+@inline(.always)
 def _next_ascii_uppercase(text: StringSpan, start: Int) -> Int:
     """Find the next ASCII uppercase byte with native-width SIMD."""
     var length = text.byte_length()
@@ -109,7 +109,7 @@ def _next_ascii_uppercase(text: StringSpan, start: Int) -> Int:
     return -1
 
 
-@always_inline
+@inline(.always)
 def _count_bounded_capitalized_word_sequence[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -143,7 +143,7 @@ def _count_bounded_capitalized_word_sequence[
     return total
 
 
-@always_inline
+@inline(.always)
 def _bounded_class_run_checksum[
     minimum: Int, maximum: Int, greedy: Bool, sum_spans: Bool
 ](run_length: Int) -> Int:
@@ -176,7 +176,7 @@ def _bounded_class_run_checksum[
             return matches
 
 
-@always_inline
+@inline(.always)
 def _count_one_byte_class_repeat[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -227,14 +227,14 @@ def _count_one_byte_class_repeat[
     ](run_length)
 
 
-@always_inline
+@inline(.always)
 def _search_one_byte_class_repeat[regex: Regex](text: StringSpan) -> Bool:
     """Search a root byte-predicate repeat by complete runs, not starts."""
     comptime repeat = regex.nodes[regex.root][RepeatNode]
     return _search_one_byte_run[regex.nodes, repeat.child, repeat.minimum](text)
 
 
-@always_inline
+@inline(.always)
 def _count_nested_run_then_disjoint_class[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:

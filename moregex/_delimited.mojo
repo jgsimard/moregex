@@ -86,7 +86,7 @@ def _analyze_literal_delimited(
     return _LiteralDelimitedPlan(prefix^, suffix^, dotall)
 
 
-@always_inline
+@inline(.always)
 def _find_literal_delimited[
     plan: _LiteralDelimitedPlan
 ](text: StringSpan, start: Int = 0) -> Optional[_MatchSpan]:
@@ -118,7 +118,7 @@ def _find_literal_delimited[
     return None
 
 
-@always_inline
+@inline(.always)
 def _count_literal_delimited[
     plan: _LiteralDelimitedPlan, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -137,7 +137,7 @@ def _count_literal_delimited[
     return total
 
 
-@always_inline
+@inline(.always)
 def _matches_literal_delimited[
     plan: _LiteralDelimitedPlan
 ](text: StringSpan) -> Bool:

@@ -43,7 +43,7 @@ def _is_ascii_fold_literal_sequence[
     return sequence.count > 0
 
 
-@always_inline
+@inline(.always)
 def _casefold_alternation_prefix_mask[
     nodes: List[RegexNode], alternation: OrNode, width: Int
 ](text: StringSpan, offset: Int) -> SIMD[.bool, width]:
@@ -76,7 +76,7 @@ def _casefold_alternation_prefix_mask[
     return candidates
 
 
-@always_inline
+@inline(.always)
 def _casefold_alternation_match_length_at[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan, start: Int) -> Int:
@@ -122,7 +122,7 @@ def _casefold_alternation_match_length_at[
     return 0
 
 
-@always_inline
+@inline(.always)
 def _count_casefold_prefixed_alternation[
     regex: Regex,
     alternation: OrNode,

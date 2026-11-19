@@ -26,7 +26,7 @@ struct _NFAOrderedResult[slot_count: Int](ImplicitlyCopyable):
     var slots: StaticTuple[Int, Self.slot_count]
 
 
-@always_inline
+@inline(.always)
 def _add_ordered_closure[
     state_count: Int,
     slot_count: Int,
@@ -130,7 +130,7 @@ def _add_ordered_closure[
             count += 1
 
 
-@always_inline
+@inline(.always)
 def _first_match_index[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -141,7 +141,7 @@ def _first_match_index[
     return -1
 
 
-@always_inline
+@inline(.always)
 def _ordered_result[
     slot_count: Int
 ](
@@ -153,7 +153,7 @@ def _ordered_result[
     return _NFAOrderedResult(_MatchSpan(start, end), groups, slots)
 
 
-@always_inline
+@inline(.always)
 def _nfa_ordered_execute[
     state_count: Int,
     slot_count: Int,
@@ -330,7 +330,7 @@ def _nfa_ordered_execute[
         position += 1
 
 
-@always_inline
+@inline(.always)
 def _nfa_ordered_match[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -343,7 +343,7 @@ def _nfa_ordered_match[
     return result.unsafe_value().span if result else None
 
 
-@always_inline
+@inline(.always)
 def _nfa_ordered_capture_participation[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -359,7 +359,7 @@ def _nfa_ordered_capture_participation[
     return _CaptureParticipation(found.span, found.groups)
 
 
-@always_inline
+@inline(.always)
 def _nfa_ordered_capture_match[
     state_count: Int,
     capture_count: Int,

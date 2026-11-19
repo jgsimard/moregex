@@ -25,7 +25,7 @@ from ._ast_matcher import (
 )
 
 
-@always_inline
+@inline(.always)
 def _count_anchored_prefix_delimited_lines[
     regex: Regex
 ](text: StringSpan) -> Int:
@@ -63,7 +63,7 @@ def _count_anchored_prefix_delimited_lines[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_anchored_lazy_literal_lines[
     regex: Regex, plan: _AnchoredLazyLiteralPlan
 ](text: StringSpan) -> Int:
@@ -112,7 +112,7 @@ def _count_anchored_lazy_literal_lines[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_line_prefix_run_literal[
     regex: Regex, plan: _LinePrefixRunLiteralPlan
 ](text: StringSpan) -> Int:

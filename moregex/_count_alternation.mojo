@@ -53,7 +53,7 @@ from ._literals import (
 )
 
 
-@always_inline
+@inline(.always)
 def _bounded_prefix_length_before[
     regex: Regex
 ](text: StringSpan, suffix_start: Int, minimum_start: Int) -> Int:
@@ -74,7 +74,7 @@ def _bounded_prefix_length_before[
     return prefix_length
 
 
-@always_inline
+@inline(.always)
 def _count_bounded_prefix_literal_alternation[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -171,7 +171,7 @@ def _class_literal_alternation_common_prefix[
     return first_index
 
 
-@always_inline
+@inline(.always)
 def _class_literal_alternation_mask[
     regex: Regex, width: Int
 ](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
@@ -227,7 +227,7 @@ def _class_literal_alternation_mask[
     return matched
 
 
-@always_inline
+@inline(.always)
 def _count_class_literal_alternation_with_suffix[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -268,7 +268,7 @@ def _count_class_literal_alternation_with_suffix[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_symmetric_bounded_delimited[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -325,7 +325,7 @@ def _count_symmetric_bounded_delimited[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_bracket_prefixed_sequence[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -371,7 +371,7 @@ def _count_bracket_prefixed_sequence[
     return total
 
 
-@always_inline
+@inline(.always)
 def _bounded_line_gap_alternation_match_length[
     regex: Regex
 ](text: StringSpan, start: Int) -> Int:
@@ -420,7 +420,7 @@ def _bounded_line_gap_alternation_match_length[
     return -1
 
 
-@always_inline
+@inline(.always)
 def _prefixed_alternation_match_length[
     regex: Regex, use_nfa: Bool = False
 ](text: StringSpan, start: Int) -> Int:
@@ -436,7 +436,7 @@ def _prefixed_alternation_match_length[
         return result.unsafe_value().consumed() if result else -1
 
 
-@always_inline
+@inline(.always)
 def _prefixed_alternation_literal_matches_at[
     nodes: List[RegexNode], alternation: OrNode
 ](text: StringSpan, start: Int) -> Bool:
@@ -451,7 +451,7 @@ def _prefixed_alternation_literal_matches_at[
     return False
 
 
-@always_inline
+@inline(.always)
 def _count_prefixed_alternation_simd[
     regex: Regex,
     alternation: OrNode,
@@ -464,7 +464,7 @@ def _count_prefixed_alternation_simd[
     var next_start = 0
     var offset = 0
 
-    @always_inline
+    @inline(.always)
     def scan[
         width: Int
     ](block_start: Int) {imm text, mut total, mut next_start} -> Bool:
@@ -528,7 +528,7 @@ def _count_prefixed_alternation_simd[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_prefixed_alternation[
     regex: Regex, alternation: OrNode, sum_spans: Bool
 ](text: StringSpan) -> Int:

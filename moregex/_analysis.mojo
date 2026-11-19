@@ -179,7 +179,7 @@ def _literal_alternation_same_first_byte[
     return True
 
 
-@always_inline
+@inline(.always)
 def _bracket_mask[
     node: BracketClassNode, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -314,7 +314,7 @@ def _required_one_byte_node_index[
             return -1
 
 
-@always_inline
+@inline(.always)
 def _sequence_start_accepts[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](value: Int) -> Bool:
@@ -329,7 +329,7 @@ def _sequence_start_accepts[
         return False
 
 
-@always_inline
+@inline(.always)
 def _node_start_accepts[
     nodes: List[RegexNode], node_index: Int
 ](value: Int) -> Bool:
@@ -361,7 +361,7 @@ def _node_start_accepts[
             return _node_start_accepts[nodes, capture.child](value)
 
 
-@always_inline
+@inline(.always)
 def _sequence_start_mask[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -377,7 +377,7 @@ def _sequence_start_mask[
         return accepted
 
 
-@always_inline
+@inline(.always)
 def _node_start_mask[
     nodes: List[RegexNode], node_index: Int, width: Int
 ](values: SIMD[.uint8, width]) -> SIMD[.bool, width]:
@@ -1246,7 +1246,7 @@ def _is_unicode_dotall_plus[nodes: List[RegexNode], node_index: Int]() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _count_unicode_dot[
     exclude_newline: Bool, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -1648,7 +1648,7 @@ def _is_leading_class_literal_search[
     return False
 
 
-@always_inline
+@inline(.always)
 def _one_byte_atom_accepts[
     nodes: List[RegexNode], node_index: Int
 ](value: Int) -> Bool:
@@ -1661,7 +1661,7 @@ def _one_byte_atom_accepts[
         return _bracket_accepts[node[BracketClassNode]](value)
 
 
-@always_inline
+@inline(.always)
 def _bounded_repeat_byte_accepts[
     nodes: List[RegexNode], node_index: Int
 ](value: Int) -> Bool:
@@ -1674,7 +1674,7 @@ def _bounded_repeat_byte_accepts[
     return _one_byte_atom_accepts[nodes, node_index](value)
 
 
-@always_inline
+@inline(.always)
 def _fixed_repeat_mask[
     nodes: List[RegexNode],
     repeat: RepeatNode,
@@ -1702,7 +1702,7 @@ def _fixed_repeat_mask[
         )
 
 
-@always_inline
+@inline(.always)
 def _fixed_sequence_mask[
     nodes: List[RegexNode],
     sequence: SequenceNode,
@@ -1728,7 +1728,7 @@ def _fixed_sequence_mask[
         )
 
 
-@always_inline
+@inline(.always)
 def _fixed_node_mask[
     nodes: List[RegexNode], node_index: Int, width: Int, pattern_offset: Int
 ](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:
@@ -1779,7 +1779,7 @@ def _fixed_node_mask[
             ](text, block_start)
 
 
-@always_inline
+@inline(.always)
 def _fixed_sequence_offset_mask[
     nodes: List[RegexNode],
     sequence: SequenceNode,
@@ -1798,7 +1798,7 @@ def _fixed_sequence_offset_mask[
     ](text, block_start + child_width)
 
 
-@always_inline
+@inline(.always)
 def _fixed_offset_mask[
     nodes: List[RegexNode], node_index: Int, width: Int, target: Int
 ](text: StringSpan, block_start: Int) -> SIMD[.bool, width]:

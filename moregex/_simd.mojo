@@ -10,7 +10,7 @@ comptime CLASS_EIGHTH_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 8)
 comptime CLASS_SIXTEENTH_SIMD_WIDTH = max(1, CLASS_SIMD_WIDTH // 16)
 
 
-@always_inline
+@inline(.always)
 def _masked_load_bytes[
     width: Int
 ](pointer: ImmPointer[UInt8, _], mask: SIMD[.bool, width]) -> SIMD[
@@ -37,7 +37,7 @@ def _masked_load_bytes[
         )
 
 
-@always_inline
+@inline(.always)
 def _search_simd_width_ladder(
     candidate_count: Int,
     base: Int,
@@ -67,7 +67,7 @@ def _search_simd_width_ladder(
     return scanner[0](base, base + candidate_count)
 
 
-@always_inline
+@inline(.always)
 def _consume_simd_width_ladder(
     limit: Int,
     mut offset: Int,

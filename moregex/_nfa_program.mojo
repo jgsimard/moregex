@@ -35,7 +35,7 @@ struct _NFAInstruction(TrivialRegisterPassable):
     var mask3: UInt64
 
 
-@always_inline
+@inline(.always)
 def _runtime_assertion_matches(
     kind: Int, text: StringSpan, position: Int
 ) -> Bool:
@@ -44,7 +44,7 @@ def _runtime_assertion_matches(
     return _zero_width_matches(kind, text, position)
 
 
-@always_inline
+@inline(.always)
 def _instruction_accepts[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],

@@ -38,7 +38,7 @@ from ._ast_matcher import (
 )
 
 
-@always_inline
+@inline(.always)
 def _count_end_anchored_fixed[
     regex: Regex, match_width: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -63,7 +63,7 @@ def _count_end_anchored_fixed[
     return total
 
 
-@always_inline
+@inline(.always)
 def _match_simple_prefix_to[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](text: StringSpan, end: Int, minimum_start: Int) -> Optional[_MatchSpan]:
@@ -168,7 +168,7 @@ def _match_simple_prefix_to[
             )
 
 
-@always_inline
+@inline(.always)
 def _simple_anchor_is_disjoint[
     nodes: List[RegexNode], sequence: SequenceNode, literal_item: Int
 ]() -> Bool:
@@ -187,7 +187,7 @@ def _simple_anchor_is_disjoint[
             )
 
 
-@always_inline
+@inline(.always)
 def _match_simple_infix_at[
     regex: Regex, literal_item: Int
 ](text: StringSpan, candidate: Int, minimum_start: Int) -> Optional[_MatchSpan]:
@@ -219,7 +219,7 @@ def _match_simple_infix_at[
     return _MatchSpan(span.start, span.start + result.unsafe_value().consumed())
 
 
-@always_inline
+@inline(.always)
 def _count_simple_infix[
     regex: Regex, literal_item: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -280,7 +280,7 @@ def _count_greedy_run_literal_suffix[
     return total
 
 
-@always_inline
+@inline(.always)
 def _search_simple_infix[
     regex: Regex, literal_item: Int
 ](text: StringSpan) -> Bool:
@@ -295,7 +295,7 @@ def _search_simple_infix[
     return False
 
 
-@always_inline
+@inline(.always)
 def _match_simple_class_anchor_at[
     regex: Regex, class_item: Int
 ](text: StringSpan, candidate: Int, minimum_start: Int) -> Optional[_MatchSpan]:
@@ -312,14 +312,14 @@ def _match_simple_class_anchor_at[
     return _MatchSpan(span.start, span.start + result.unsafe_value().consumed())
 
 
-@always_inline
+@inline(.always)
 def _search_simple_class_anchor[
     regex: Regex, class_item: Int
 ](text: StringSpan) -> Bool:
     comptime sequence = regex.nodes[regex.root][SequenceNode]
     comptime class_index = sequence.items[class_item]
 
-    @always_inline
+    @inline(.always)
     def scan[width: Int](start: Int, end: Int) {imm text} -> Bool:
         comptime if width == 0:
             for candidate in range(start, end):
@@ -349,7 +349,7 @@ def _search_simple_class_anchor[
     return _search_simd_width_ladder(text.byte_length(), 0, scan)
 
 
-@always_inline
+@inline(.always)
 def _count_simple_class_anchor[
     regex: Regex, class_item: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -358,7 +358,7 @@ def _count_simple_class_anchor[
     var total = 0
     var next_start = 0
 
-    @always_inline
+    @inline(.always)
     def scan[
         width: Int
     ](block_start: Int) {imm text, mut total, mut next_start} -> Bool:
@@ -399,7 +399,7 @@ def _count_simple_class_anchor[
     return total
 
 
-@always_inline
+@inline(.always)
 def _count_reverse_suffix_class[
     regex: Regex, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -445,12 +445,12 @@ def _count_reverse_suffix_class[
     return total
 
 
-@always_inline
+@inline(.always)
 def _use_full_fixed_alternation_mask[regex: Regex, match_width: Int]() -> Bool:
     return match_width <= 8
 
 
-@always_inline
+@inline(.always)
 def _count_fixed_width_prefiltered[
     regex: Regex, match_width: Int, sum_spans: Bool
 ](text: StringSpan) -> Int:
@@ -516,7 +516,7 @@ def _count_fixed_width_prefiltered[
     return total
 
 
-@always_inline
+@inline(.always)
 def _search_fixed_width_prefiltered[
     regex: Regex, match_width: Int
 ](text: StringSpan) -> Bool:
@@ -527,7 +527,7 @@ def _search_fixed_width_prefiltered[
     var length = text.byte_length()
     var offset = 0
 
-    @always_inline
+    @inline(.always)
     def scan[width: Int](block_start: Int) {imm text} -> Bool:
         var candidates = _fixed_offset_mask[
             regex.nodes, regex.root, width, plan.first

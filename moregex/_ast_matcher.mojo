@@ -15,7 +15,7 @@ from ._analysis import _is_one_byte_class_node
 from ._byte_scan import _one_byte_run_end
 
 
-@always_inline
+@inline(.always)
 def _match_sequence_from[
     nodes: List[RegexNode], sequence: SequenceNode, item: Int
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:
@@ -132,7 +132,7 @@ def _match_sequence_from[
         )
 
 
-@always_inline
+@inline(.always)
 def _match_node[
     nodes: List[RegexNode], node_index: Int
 ](text: StringSpan, start: Int) -> Optional[_MatchResult]:

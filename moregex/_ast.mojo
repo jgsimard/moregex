@@ -106,13 +106,13 @@ __enum RegexNode(ImplicitlyCopyable):
                 return i
         return -1
 
-    @always_inline
+    @inline(.always)
     def isa[T: AnyType](self) -> Bool:
         comptime case_index = Self._case_index[T]()
         comptime assert case_index >= 0, "unsupported regex node payload"
         return self._get_enum_discriminant() == case_index
 
-    @always_inline
+    @inline(.always)
     def __getitem_param__[T: AnyType](ref self) -> ref[self] T:
         comptime case_index = Self._case_index[T]()
         comptime assert case_index >= 0, "unsupported regex node payload"

@@ -5,7 +5,7 @@ from std.utils import StaticTuple
 from ._ast import BracketClassNode
 
 
-@always_inline
+@inline(.always)
 def _runtime_bracket_accepts(node: BracketClassNode, value: Int) -> Bool:
     for item in range(node.count):
         if node.lows[item] <= value <= node.highs[item]:
@@ -13,7 +13,7 @@ def _runtime_bracket_accepts(node: BracketClassNode, value: Int) -> Bool:
     return node.negated
 
 
-@always_inline
+@inline(.always)
 def _build_bracket_masks(node: BracketClassNode) -> StaticTuple[UInt64, 4]:
     """Compile a bracket class into a 256-bit byte lookup table."""
     var masks = StaticTuple[UInt64, 4]()

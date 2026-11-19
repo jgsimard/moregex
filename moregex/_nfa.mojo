@@ -37,7 +37,7 @@ struct _NFABitStates(TrivialRegisterPassable):
     var matched: Bool
 
 
-@always_inline
+@inline(.always)
 def _add_closure[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -162,7 +162,7 @@ def _static_transitions[
     return (closures, matches)
 
 
-@always_inline
+@inline(.always)
 def _nfa_search_static_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -196,7 +196,7 @@ def _nfa_search_static_bits[
     return False
 
 
-@always_inline
+@inline(.always)
 def _epsilon_closure_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -226,7 +226,7 @@ def _epsilon_closure_bits[
     return _NFABitStates(consuming, matched)
 
 
-@always_inline
+@inline(.always)
 def _nfa_search_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -255,7 +255,7 @@ def _nfa_search_bits[
     return False
 
 
-@always_inline
+@inline(.always)
 def _nfa_full_static_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -285,7 +285,7 @@ def _nfa_full_static_bits[
     return False
 
 
-@always_inline
+@inline(.always)
 def _nfa_full_bits[
     state_count: Int,
     program: StaticTuple[_NFAInstruction, state_count],
@@ -314,7 +314,7 @@ def _nfa_full_bits[
     return active.matched
 
 
-@always_inline
+@inline(.always)
 def _nfa_search_from[regex: Regex](text: StringSpan, search_start: Int) -> Bool:
     """Search from an input offset with a stack-resident Thompson NFA."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
@@ -381,7 +381,7 @@ def _nfa_search_from[regex: Regex](text: StringSpan, search_start: Int) -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def _nfa_find_from[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[_MatchSpan]:
@@ -396,7 +396,7 @@ def _nfa_find_from[
     )
 
 
-@always_inline
+@inline(.always)
 def _nfa_match_at[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[_MatchSpan]:
@@ -410,7 +410,7 @@ def _nfa_match_at[
     )
 
 
-@always_inline
+@inline(.always)
 def _nfa_find_captures[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[
@@ -427,7 +427,7 @@ def _nfa_find_captures[
     ](text, search_start)
 
 
-@always_inline
+@inline(.always)
 def _nfa_find_capture_participation[
     regex: Regex
 ](text: StringSpan, search_start: Int) -> Optional[_CaptureParticipation]:
@@ -442,7 +442,7 @@ def _nfa_find_capture_participation[
     ](text, search_start)
 
 
-@always_inline
+@inline(.always)
 def _nfa_match_captures_at[
     regex: Regex
 ](text: StringSpan, start: Int) -> Optional[
@@ -458,7 +458,7 @@ def _nfa_match_captures_at[
     ](text, start)
 
 
-@always_inline
+@inline(.always)
 def _nfa_full_match[regex: Regex](text: StringSpan) -> Bool:
     """Match the complete input with ordered Thompson-NFA semantics."""
     comptime compiled = _compile_program(regex.nodes, regex.root)
@@ -485,7 +485,7 @@ def _nfa_full_match[regex: Regex](text: StringSpan) -> Bool:
     return Bool(result)
 
 
-@always_inline
+@inline(.always)
 def _nfa_search[regex: Regex](text: StringSpan) -> Bool:
     """Search using a linear-time Thompson NFA."""
     return _nfa_search_from[regex](text, 0)
